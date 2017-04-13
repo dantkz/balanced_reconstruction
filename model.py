@@ -8,9 +8,7 @@ import pickle
 import os
 import scipy.misc
 
-
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow.contrib.slim as slim
 
 import util
 import ops
@@ -56,8 +54,10 @@ class VAE(object):
 
     def loss_graph(self):
         losses = self.eval_loss(self.recs_mu)
+        print(losses)
         losses.append(self.kldiv_loss())
         for l in losses:
+            print(l)
             tf.add_to_collection('losses', l)
             tf.summary.scalar(l.name, l)
 
@@ -145,8 +145,9 @@ class BalancedLoss(object):
         for b in self.biases:
             retval[b] = np.random.randn([1], dtype=np.float32) + 0.5
         for yt in self.y_targets:
-            # TODO
             retval[yt] = np.random.randint(2, size=[self.batch_size, self.image_size, self.image_size, 1], dtype=np.float32)
+        for pw in self.pos_weights:
+            retval[pw] = np.random.rand(1).astype(np.float32)
         return retval
 
 
@@ -165,9 +166,7 @@ class BalancedLoss(object):
             cur_loss = tf.reduce_sum(cur_loss, axis=(1,2,3))
             cur_loss = tf.reduce_mean(cur_loss, name='wcel'+str(i))
             losses.append(cur_loss)
-
-        # TODO
-        return []#losses
+        return losses
 
 
 def train(train_dir):
@@ -224,7 +223,8 @@ def train(train_dir):
         summary_writer = tf.summary.FileWriter(train_dir, sess.graph)
 
         sess.run(tf.global_variables_initializer())
-        num_steps = math.ceil(num_examples/batch_size)
+
+        num_steps = math.ceil(dataset.train.num_img/batch_size)
         num_epochs = 30
 
         stocha0 = 0.0

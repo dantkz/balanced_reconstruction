@@ -14,16 +14,15 @@ import tensorflow.contrib.slim as slim
 
 import util
 import ops
+import dataset_manager
 
 epsilon = 0.0000001
 
 class VAE(object):
-    def __init__(self, batch_size, code_dim, img_encoder_params, img_decoder_params, images):
+    def __init__(self, batch_size, code_dim, img_encoder_params, img_decoder_params, images, eval_loss):
 
         self.batch_size             = batch_size
         self.code_dim               = code_dim
-        self.IMAGE_SIZE             = img_decoder_params['outshapes'][-1]
-        self.COLOR_CHN              = img_decoder_params['COLOR_CHN']
 
         # Constants
         self.codes_prior_sigma      = 1.0
@@ -31,36 +30,33 @@ class VAE(object):
   
         # Inputs
         self.images = images
+        self.eval_loss = eval_loss
 
         # Placeholders
         self.is_training = tf.placeholder(tf.bool, [], name='is_training')
         self.lr = tf.placeholder(tf.float32, [], name='learning_rate')
-        self.stocha = tf.placeholder("float", [1])
-        self.beta = tf.placeholder("float", [1])
-        self.codes_noise = tf.placeholder("float", [self.batch_size, 1, 1, self.code_dim])
+        self.stocha = tf.placeholder(tf.float32, [1])
+        self.beta = tf.placeholder(tf.float32, [1])
+        self.codes_noise = tf.placeholder(tf.float32, [self.batch_size, 1, 1, self.code_dim])
 
         # Variables
         with tf.variable_scope("model") as scope:
-            self.img_encoder = ops.ConvEncoder(img_encoder_params)
+            self.img_encoder = ops.ConvEncoder(**img_encoder_params)
             self.img_parameterizer = ops.GaussianParameterizer(self.img_encoder.outdim(), self.code_dim, 'img_codes', ksize=1)
 
-            self.img_decoder = ops.ConvDecoder(img_decoder_params)
+            self.img_decoder = ops.ConvDecoder(**img_decoder_params)
 
-            self.raw_sigma = ops.variable('raw_sigma', shape=[1,1], initializer=tf.constant_initializer(1.0))
             self.prior_codes_mu = tf.zeros([self.batch_size, 1, 1, self.code_dim])
             self.prior_codes_sigma = self.codes_prior_sigma * tf.ones([self.batch_size, 1, 1, self.code_dim])
 
-        self.sigma = tf.reshape(tf.nn.softplus(tf.reshape(self.raw_sigma, [1, 1, 1, 1])), [1])
-
         # Summaries
-        util.activation_summary(self.sigma, 'sigma')
         tf.summary.scalar('learning_rate', self.lr)
-        tf.summary.scalar('sigma', self.sigma[0])
         tf.summary.scalar('stocha0', self.stocha[0])
         tf.summary.scalar('beta0', self.beta[0])
 
     def loss_graph(self):
-        losses = self.get_losses()
+        losses = self.eval_loss(self.recs_mu)
+        losses.append(self.kldiv_loss())
         for l in losses:
             tf.add_to_collection('losses', l)
             tf.summary.scalar(l.name, l)
@@ -94,31 +90,18 @@ class VAE(object):
 
 
     def decode_codes(self, codes, reuse=False):
-        recs_mu = self.img_decoder.decode(codes, is_training=self.is_training, reuse=reuse)
+        _ = self.img_decoder.decode(codes, is_training=self.is_training, reuse=reuse)
+        recs_mu = self.img_decoder.rec_stack[-1]
         return recs_mu
 
   
-    def get_losses(self):
-        losses = []
-        def get_recon_loss(images, recs_mu, scale_factor, name):
-            recon_diff = tf.square(images - recs_mu)
-            recon_loss = scale_factor * 0.5 * tf.reduce_sum( \
-                    2.0*tf.log(self.sigma) \
-                       + tf.div(recon_diff, tf.square(tf.maximum(epsilon, self.sigma))) \
-                       , [1,2,3])
-            recon_loss = tf.multiply(1.0/(self.batch_size), tf.reduce_sum(recon_loss), name='recon_loss' + name)
-            return recon_loss
-
-
-
+    def kldiv_loss(self):
         # kl-divergence 
         codes_mu = tf.reshape(self.codes_mu, [-1, 1, 1, self.code_dim])
         codes_sigma = tf.reshape(self.codes_sigma, [-1, 1, 1, self.code_dim])
         code_kldiv = ops.kldiv_unitgauss(codes_mu, codes_sigma, coeff=self.beta[0])
         code_kldiv_loss = tf.reduce_mean(code_kldiv, name='code_kldiv')
-        losses.append(code_kldiv_loss)
-
-        return losses
+        return code_kldiv_loss
 
     
     
@@ -127,10 +110,71 @@ class VAE(object):
             return ops.train(self.loss, global_step, learning_rate=self.lr, name='training_step')
 
 
+class BalancedLoss(object):
+
+    def __init__(self, batch_size, image_size, color_chn, images, ksize=1, num_projsigs=10):
+        # params
+        self.batch_size = batch_size
+        self.image_size = image_size
+        self.color_chn = color_chn
+        self.ksize = ksize
+        self.num_projsigs = num_projsigs
+
+        # input
+        self.images = images
+
+        # placeholders
+        self.kernels = []
+        self.biases = []
+        self.y_targets = []
+        self.pos_weights = []
+        for i in xrange(self.num_projsigs):
+            self.kernels.append(tf.placeholder(tf.float32, [self.ksize, self.ksize, self.color_chn, 1]))
+            self.biases.append(tf.placeholder(tf.float32, [1]))
+            self.y_targets.append(tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size, 1]))
+            self.pos_weights.append(tf.placeholder(tf.float32, [1]))
+
+        self.learn_loss = self.get_learn_loss()
+
+
+    def cur_feed_dict(self):
+        # TODO
+        retval = {}
+        for k in self.kernels:
+            retval[k] = np.random.randn([self.ksize, self.ksize, self.color_chn, 1], dtype=np.float32)
+        for b in self.biases:
+            retval[b] = np.random.randn([1], dtype=np.float32) + 0.5
+        for yt in self.y_targets:
+            # TODO
+            retval[yt] = np.random.randint(2, size=[self.batch_size, self.image_size, self.image_size, 1], dtype=np.float32)
+        return retval
+
+
+    def get_learn_loss(self):
+        pass
+
+
+    def eval_loss(self, inp):
+        losses = []
+        for i in xrange(self.num_projsigs):
+            convout = tf.nn.conv2d(inp, self.kernels[i], strides=(1,1,1,1), padding='SAME')
+            cur_logits = tf.nn.bias_add(convout, self.biases[i])
+
+            cur_loss = tf.nn.weighted_cross_entropy_with_logits(targets=self.y_targets[i], logits=cur_logits, pos_weight=self.pos_weights[i])
+
+            cur_loss = tf.reduce_sum(cur_loss, axis=(1,2,3))
+            cur_loss = tf.reduce_mean(cur_loss, name='wcel'+str(i))
+            losses.append(cur_loss)
+
+        # TODO
+        return []#losses
+
 
 def train(train_dir):
     with tf.Graph().as_default():
         global_step = tf.Variable(0, trainable=False)
+        batch_size = 32
+        code_dim = 64
 
         img_encoder_params = {
                         'scopename' : 'img_enc', 
@@ -152,26 +196,24 @@ def train(train_dir):
                     }
 
         dataset = dataset_manager.get_dataset('celeba64')
-        batch_size = 32
+        image_size, color_chn = dataset.train.get_dims()
         train_images = dataset.train.next_batch(batch_size)
-        model = VAE(batch_size, 64, img_encoder_params, img_decoder_params, train_images)
+
+        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images)
+
+        model = VAE(batch_size, code_dim, img_encoder_params, img_decoder_params, train_images, balanced_loss.eval_loss)
         model.train_graph()
         model.sample_graph(reuse=True)
 
         model.loss_graph()
         train_op = model.train(global_step)
 
-        # TODO bloss_train
-
         saver = tf.train.Saver(tf.global_variables())
 
         # Build the summary operation based on the TF collection of Summaries.
-        for i, cur_image in enumerate(model.images_stack):
-            util.image_summary(cur_image, str(i) + '_' + 'inp')
-        for i, cur_recs in enumerate(model.recs_mu_stack):
-            util.image_summary(cur_recs, str(i) + '_rec')
-        for i, cur_recs in enumerate(model.sampled_recs_mu_stack):
-            util.image_summary(cur_recs, 'sampled_' + str(i))
+        util.image_summary(model.images, 'model_inp')
+        util.image_summary(model.recs_mu, 'model_rec')
+        util.image_summary(model.sampled_recs_mu, 'sample')
         summary_op = tf.summary.merge_all()
 
         # Start running operations on the Graph.
@@ -182,7 +224,7 @@ def train(train_dir):
         summary_writer = tf.summary.FileWriter(train_dir, sess.graph)
 
         sess.run(tf.global_variables_initializer())
-        num_steps = math.ceil(flags.num_examples/flags.batch_size)
+        num_steps = math.ceil(num_examples/batch_size)
         num_epochs = 30
 
         stocha0 = 0.0
@@ -194,13 +236,15 @@ def train(train_dir):
             if epoch%15 == 14:
                 cur_learning_rate = cur_learning_rate/10.
                 
+            epoch_feed_dict = balanced_loss.cur_feed_dict()
             for step in xrange(num_steps):
-                cur_feed_dict = {}
+                # TODO 
+                cur_feed_dict = epoch_feed_dict.copy()
                 cur_feed_dict[model.lr] = cur_lr
                 cur_feed_dict[model.is_training] = True
                 cur_feed_dict[model.stocha] = np.array([stocha0])
                 cur_feed_dict[model.beta] = np.array([beta0])
-                cur_feed_dict[model.codes_noise] = np.random.randn(flags.batch_size, 1, 1, flags.code_dim).astype('float32')
+                cur_feed_dict[model.codes_noise] = np.random.randn(batch_size, 1, 1, code_dim).astype('float32')
 
                 _ = sess.run(train_op, feed_dict=cur_feed_dict)
 

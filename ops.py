@@ -40,7 +40,7 @@ class ConvDecoder(object):
         inp = code
         prev_color = None
 
-        for layer_i in xrange(self.num_layers):
+        for layer_i in range(self.num_layers):
             scopename = self.scopename + '_' + str(layer_i)
 
             inpshape = inp.get_shape().as_list()[1]
@@ -113,7 +113,7 @@ class ConvEncoder(object):
 
     def encode(self, image, is_training, reuse=False):
         inp = image
-        for layer_i in xrange(self.num_layers):
+        for layer_i in range(self.num_layers):
             # conv
             scopename = self.scopename + '_' + str(layer_i)
             ksize = self.ksizes[layer_i]

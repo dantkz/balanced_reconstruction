@@ -53,8 +53,7 @@ class VAE(object):
         tf.summary.scalar('beta0', self.beta[0])
 
     def loss_graph(self):
-        losses = self.eval_loss(self.recs_mu)
-        print(losses)
+        losses = self.eval_loss(self.recs_mu, self.images)
         losses.append(self.kldiv_loss())
         for l in losses:
             print(l)
@@ -112,60 +111,112 @@ class VAE(object):
 
 class BalancedLoss(object):
 
-    def __init__(self, batch_size, image_size, color_chn, images, ksize=1, num_projsigs=10):
+    def __init__(self, batch_size, image_size, color_chn, images, num_steps, ksize=1, num_projsigs=10):
         # params
         self.batch_size = batch_size
         self.image_size = image_size
         self.color_chn = color_chn
         self.ksize = ksize
         self.num_projsigs = num_projsigs
+        self.num_steps = num_steps
 
         # input
         self.images = images
 
         # placeholders
-        self.kernels = []
-        self.biases = []
-        self.y_targets = []
-        self.pos_weights = []
-        for i in xrange(self.num_projsigs):
-            self.kernels.append(tf.placeholder(tf.float32, [self.ksize, self.ksize, self.color_chn, 1]))
-            self.biases.append(tf.placeholder(tf.float32, [1]))
-            self.y_targets.append(tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size, 1]))
-            self.pos_weights.append(tf.placeholder(tf.float32, [1]))
+        self.eval_placeholders = []
+        self.learned_placeholders = []
+        self.cur_eval_projsigs = []
+        self.cur_learned_projsigs = []
 
-        self.learn_loss = self.get_learn_loss()
+        for i in xrange(self.num_projsigs):
+            retval = {}
+            retval['kernel'] = tf.placeholder(tf.float32, [self.ksize, self.ksize, self.color_chn, 1])
+            retval['bias'] = tf.placeholder(tf.float32, [1])
+            retval['pos_weight'] = tf.placeholder(tf.float32, [1])
+            self.eval_placeholders.append(retval)
+
+            retval = {}
+            retval['kernel'] = tf.placeholder(tf.float32, [self.ksize, self.ksize, self.color_chn, 1])
+            retval['bias'] = tf.placeholder(tf.float32, [1])
+            self.learned_placeholders.append(retval)
+
+    
+        # Variables
+        with tf.variable_scope('BalancedLoss') as scope:
+            for i in xrange(self.num_projsigs):
+                retval = {}
+                retval['kernel'] = np.zeros([self.ksize, self.ksize, self.color_chn, 1], dtype=np.float32)
+                retval['kernel'][self.ksize//2, self.ksize//2, :, :] = 1./self.color_chn
+
+                retval['bias'] = (np.zeros([1])).astype(np.float32)
+                retval['bias'][0] = float(i)/(self.num_projsigs-1) - 0.5
+
+                retval['pos_weight'] = tf.get_variable('pos_weight_'+str(i), dtype=tf.float32, shape=[1], trainable=False, initializer=tf.constant_initializer(0.5))
+                self.cur_learned_projsigs.append(retval)
+
+        # end __init__
+
+
+    def next_epoch(self, sess):
+        # push learned values from cur_learned_projsigs to cur_eval_projsigs
+        self.cur_eval_projsigs = []
+        for i in xrange(self.num_projsigs):
+            retval = {}
+            retval['kernel'] = self.cur_learned_projsigs[i]['kernel']
+            retval['bias'] = self.cur_learned_projsigs[i]['bias']
+            retval['pos_weight'] = self.cur_learned_projsigs[i]['pos_weight'].eval(session=sess)
+            self.cur_eval_projsigs.append(retval)
+
+        # get new values for cur_learned_projsigs
+        for i, cur_projsig in enumerate(self.cur_learned_projsigs):
+            cur_projsig['kernel'] = np.random.randn(self.ksize, self.ksize, self.color_chn, 1).astype(np.float32)
+            cur_projsig['bias'] = (np.random.randn(1)).astype(np.float32)
+            tf.assign(cur_projsig['pos_weight'], np.zeros([1], dtype=np.float32)).eval(session=sess)
 
 
     def cur_feed_dict(self):
-        # TODO
-        retval = {}
-        for k in self.kernels:
-            retval[k] = np.random.randn([self.ksize, self.ksize, self.color_chn, 1], dtype=np.float32)
-        for b in self.biases:
-            retval[b] = np.random.randn([1], dtype=np.float32) + 0.5
-        for yt in self.y_targets:
-            retval[yt] = np.random.randint(2, size=[self.batch_size, self.image_size, self.image_size, 1], dtype=np.float32)
-        for pw in self.pos_weights:
-            retval[pw] = np.random.rand(1).astype(np.float32)
-        return retval
+        feed_dict = {}
+        for i, cur_projsig in enumerate(self.eval_placeholders):
+            feed_dict[cur_projsig['kernel']] = self.cur_eval_projsigs[i]['kernel']
+            feed_dict[cur_projsig['bias']] = self.cur_eval_projsigs[i]['bias']
+            feed_dict[cur_projsig['pos_weight']] = self.cur_eval_projsigs[i]['pos_weight']
+        for i, cur_projsig in enumerate(self.learned_placeholders):
+            feed_dict[cur_projsig['kernel']] = self.cur_learned_projsigs[i]['kernel']
+            feed_dict[cur_projsig['bias']] = self.cur_learned_projsigs[i]['bias']
+
+        return feed_dict
 
 
-    def get_learn_loss(self):
-        pass
-
-
-    def eval_loss(self, inp):
+    def eval_loss(self, inp, target):
         losses = []
+
+        def get_logits(inp, cur_projsig):
+            convout = tf.nn.conv2d(inp, cur_projsig['kernel'], strides=(1,1,1,1), padding='SAME')
+            cur_logits = tf.nn.bias_add(convout, cur_projsig['bias'])
+            return cur_logits
+
+        # feed through cur_learned_projsigs
         for i in xrange(self.num_projsigs):
-            convout = tf.nn.conv2d(inp, self.kernels[i], strides=(1,1,1,1), padding='SAME')
-            cur_logits = tf.nn.bias_add(convout, self.biases[i])
+            cur_projsig = self.cur_learned_projsigs[i]
+            ytargets = tf.nn.sigmoid(get_logits(target, cur_projsig))
+            update_pos_weight = tf.assign_add(cur_projsig['pos_weight'], tf.reduce_mean(ytargets, keep_dims=True)[0,0,0,:]/self.num_steps)
 
-            cur_loss = tf.nn.weighted_cross_entropy_with_logits(targets=self.y_targets[i], logits=cur_logits, pos_weight=self.pos_weights[i])
+            with tf.control_dependencies([update_pos_weight]):
+                # feed through eval_placeholders
+                cur_projsig = self.eval_placeholders[i]
+                cur_logits = get_logits(inp, cur_projsig)
+                ytargets = tf.nn.sigmoid(get_logits(target, cur_projsig))
 
-            cur_loss = tf.reduce_sum(cur_loss, axis=(1,2,3))
-            cur_loss = tf.reduce_mean(cur_loss, name='wcel'+str(i))
-            losses.append(cur_loss)
+                cur_loss = tf.nn.weighted_cross_entropy_with_logits(
+                            targets=ytargets, 
+                            logits=cur_logits, 
+                            pos_weight=cur_projsig['pos_weight']
+                        )
+
+                cur_loss = tf.reduce_mean(tf.reduce_sum(cur_loss, axis=(1,2,3)), name='wcel_'+str(i))
+                losses.append(cur_loss)
+
         return losses
 
 
@@ -198,14 +249,17 @@ def train(train_dir):
         image_size, color_chn = dataset.train.get_dims()
         train_images = dataset.train.next_batch(batch_size)
 
-        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images)
+        num_steps = math.ceil(dataset.train.num_img/batch_size)
+        num_epochs = 30
+
+        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps)
 
         model = VAE(batch_size, code_dim, img_encoder_params, img_decoder_params, train_images, balanced_loss.eval_loss)
         model.train_graph()
         model.sample_graph(reuse=True)
 
         model.loss_graph()
-        train_op = model.train(global_step)
+        model_train_op = model.train(global_step)
 
         saver = tf.train.Saver(tf.global_variables())
 
@@ -224,9 +278,6 @@ def train(train_dir):
 
         sess.run(tf.global_variables_initializer())
 
-        num_steps = math.ceil(dataset.train.num_img/batch_size)
-        num_epochs = 30
-
         stocha0 = 0.0
         beta0 = 1.00
 
@@ -236,19 +287,20 @@ def train(train_dir):
             if epoch%15 == 14:
                 cur_learning_rate = cur_learning_rate/10.
                 
-            epoch_feed_dict = balanced_loss.cur_feed_dict()
+            for i in xrange(10):
+                print(balanced_loss.cur_learned_projsigs[i]['pos_weight'].eval(session=sess))
+            balanced_loss.next_epoch(sess)
             for step in xrange(num_steps):
-                # TODO 
-                cur_feed_dict = epoch_feed_dict.copy()
+                cur_feed_dict = balanced_loss.cur_feed_dict()
                 cur_feed_dict[model.lr] = cur_lr
                 cur_feed_dict[model.is_training] = True
                 cur_feed_dict[model.stocha] = np.array([stocha0])
                 cur_feed_dict[model.beta] = np.array([beta0])
                 cur_feed_dict[model.codes_noise] = np.random.randn(batch_size, 1, 1, code_dim).astype('float32')
 
-                _ = sess.run(train_op, feed_dict=cur_feed_dict)
+                _ = sess.run(model_train_op, feed_dict=cur_feed_dict)
 
-                model_loss_val = sess.run(model.model_loss, feed_dict=cur_feed_dict)
+                model_loss_val = sess.run(model.loss, feed_dict=cur_feed_dict)
 
                 if step%2==0 or (step + 1) == num_steps:
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')

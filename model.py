@@ -167,7 +167,7 @@ class BalancedLoss(object):
             retval = {}
             retval['kernel'] = self.cur_learned_projsigs[i]['kernel']
             retval['bias'] = self.cur_learned_projsigs[i]['bias']
-            retval['pos_weight'] = self.cur_learned_projsigs[i]['pos_weight'].eval(session=sess) / self.cur_learned_projsigs[i]['neg_weight'].eval(session=sess)
+            retval['pos_weight'] = self.cur_learned_projsigs[i]['neg_weight'].eval(session=sess) / self.cur_learned_projsigs[i]['pos_weight'].eval(session=sess)
             self.cur_eval_projsigs.append(retval)
 
         # get new values for cur_learned_projsigs
@@ -286,7 +286,7 @@ def train(train_dir):
         beta0 = 1.00
 
         summary_step = 0
-        cur_lr = 0.001
+        cur_lr = 0.0001
         for epoch in xrange(num_epochs):
             if epoch%15 == 14:
                 cur_learning_rate = cur_learning_rate/10.

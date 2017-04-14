@@ -153,6 +153,8 @@ class BalancedLoss(object):
                 retval['bias'][0] = float(i)/(self.num_projsigs-1) - 0.5
 
                 retval['pos_weight'] = tf.get_variable('pos_weight_'+str(i), dtype=tf.float32, shape=[1], trainable=False, initializer=tf.constant_initializer(0.5))
+                retval['neg_weight'] = tf.get_variable('neg_weight_'+str(i), dtype=tf.float32, shape=[1], trainable=False, initializer=tf.constant_initializer(0.5))
+
                 self.cur_learned_projsigs.append(retval)
 
         # end __init__
@@ -165,7 +167,7 @@ class BalancedLoss(object):
             retval = {}
             retval['kernel'] = self.cur_learned_projsigs[i]['kernel']
             retval['bias'] = self.cur_learned_projsigs[i]['bias']
-            retval['pos_weight'] = self.cur_learned_projsigs[i]['pos_weight'].eval(session=sess)
+            retval['pos_weight'] = self.cur_learned_projsigs[i]['pos_weight'].eval(session=sess) / self.cur_learned_projsigs[i]['neg_weight'].eval(session=sess)
             self.cur_eval_projsigs.append(retval)
 
         # get new values for cur_learned_projsigs
@@ -173,6 +175,7 @@ class BalancedLoss(object):
             cur_projsig['kernel'] = np.random.randn(self.ksize, self.ksize, self.color_chn, 1).astype(np.float32)
             cur_projsig['bias'] = (np.random.randn(1)).astype(np.float32)
             tf.assign(cur_projsig['pos_weight'], np.zeros([1], dtype=np.float32)).eval(session=sess)
+            tf.assign(cur_projsig['neg_weight'], np.zeros([1], dtype=np.float32)).eval(session=sess)
 
 
     def cur_feed_dict(self):
@@ -201,8 +204,9 @@ class BalancedLoss(object):
             cur_projsig = self.cur_learned_projsigs[i]
             ytargets = tf.nn.sigmoid(get_logits(target, cur_projsig))
             update_pos_weight = tf.assign_add(cur_projsig['pos_weight'], tf.reduce_mean(ytargets, keep_dims=True)[0,0,0,:]/self.num_steps)
+            update_neg_weight = tf.assign_add(cur_projsig['neg_weight'], tf.reduce_mean(1-ytargets, keep_dims=True)[0,0,0,:]/self.num_steps)
 
-            with tf.control_dependencies([update_pos_weight]):
+            with tf.control_dependencies([update_pos_weight, update_neg_weight]):
                 # feed through eval_placeholders
                 cur_projsig = self.eval_placeholders[i]
                 cur_logits = get_logits(inp, cur_projsig)
@@ -289,9 +293,11 @@ def train(train_dir):
                 
             for i in xrange(10):
                 print(balanced_loss.cur_learned_projsigs[i]['pos_weight'].eval(session=sess))
+                print(balanced_loss.cur_learned_projsigs[i]['neg_weight'].eval(session=sess))
             balanced_loss.next_epoch(sess)
             for i in xrange(10):
                 print(balanced_loss.cur_learned_projsigs[i]['pos_weight'].eval(session=sess))
+                print(balanced_loss.cur_learned_projsigs[i]['neg_weight'].eval(session=sess))
             for step in xrange(num_steps):
                 cur_feed_dict = balanced_loss.cur_feed_dict()
                 cur_feed_dict[model.lr] = cur_lr

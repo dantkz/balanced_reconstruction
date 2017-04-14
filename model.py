@@ -111,7 +111,7 @@ class VAE(object):
 
 class BalancedLoss(object):
 
-    def __init__(self, batch_size, image_size, color_chn, images, num_steps, ksize=1, num_projsigs=10):
+    def __init__(self, batch_size, image_size, color_chn, images, num_steps, ksize=1, num_projsigs=64):
         # params
         self.batch_size = batch_size
         self.image_size = image_size
@@ -271,12 +271,7 @@ def train(train_dir):
             if epoch%15 == 14:
                 cur_learning_rate = cur_learning_rate/10.
                 
-            print('+', balanced_loss.cur_learned_projsigs['pos'].eval(session=sess))
-            print('-', balanced_loss.cur_learned_projsigs['neg'].eval(session=sess))
             balanced_loss.next_epoch(sess)
-            print('+', balanced_loss.cur_learned_projsigs['pos'].eval(session=sess))
-            print('-', balanced_loss.cur_learned_projsigs['neg'].eval(session=sess))
-            print('pos_weight', balanced_loss.cur_eval_projsigs['pos_weight'])
 
             for step in xrange(num_steps):
                 cur_feed_dict = balanced_loss.cur_feed_dict()
@@ -290,11 +285,11 @@ def train(train_dir):
 
                 model_loss_val = sess.run(model.loss, feed_dict=cur_feed_dict)
 
-                if step%2==0 or (step + 1) == num_steps:
+                if step%200==0 or (step + 1) == num_steps:
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')
                     print (format_str % (datetime.now(), epoch, num_epochs-1, step, num_steps-1, model_loss_val))
 
-                if step%10==0:
+                if step%200==0:
                     summary_str = sess.run(summary_op, feed_dict=cur_feed_dict)
                     summary_writer.add_summary(summary_str, summary_step)
                     summary_step += 1

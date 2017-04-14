@@ -243,8 +243,8 @@ def batchnorm(X, is_training, reuse=False, decay=0.9, name='batchnorm'):
 
 def train(loss, global_step, learning_rate, target_vars=None, name='', moving_average_decay=0.99):
     # Decay the learning rate exponentially based on the number of steps.
-    #opt = tf.train.AdamOptimizer(learning_rate)
-    opt = tf.train.MomentumOptimizer(learning_rate, momentum=0.99, use_nesterov=True)
+    opt = tf.train.AdamOptimizer(learning_rate)
+    #opt = tf.train.MomentumOptimizer(learning_rate, momentum=0.99, use_nesterov=True)
   
     if not target_vars:
         target_vars = tf.trainable_variables()

@@ -290,6 +290,8 @@ def train(train_dir):
             for i in xrange(10):
                 print(balanced_loss.cur_learned_projsigs[i]['pos_weight'].eval(session=sess))
             balanced_loss.next_epoch(sess)
+            for i in xrange(10):
+                print(balanced_loss.cur_learned_projsigs[i]['pos_weight'].eval(session=sess))
             for step in xrange(num_steps):
                 cur_feed_dict = balanced_loss.cur_feed_dict()
                 cur_feed_dict[model.lr] = cur_lr

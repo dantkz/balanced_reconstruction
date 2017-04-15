@@ -300,7 +300,7 @@ def train(train_dir):
                 # Save the model checkpoint periodically.
                 if (epoch%2==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
                     checkpoint_path = os.path.join(train_dir, 'model.ckpt')
-                    saver.save(sess, checkpoint_path, global_step=(step))
+                    saver.save(sess, checkpoint_path, global_step=(epoch))
 
                 if (step + 1) == num_steps:
                     recs_mu = sess.run(model.recs_mu, feed_dict=cur_feed_dict)

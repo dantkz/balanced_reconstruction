@@ -9,6 +9,7 @@ import os
 import scipy.misc
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
+import tensorflow.contrib.slim as slim
 
 import util
 import ops
@@ -150,8 +151,8 @@ class BalancedLoss(object):
                 self.cur_learned_projsigs[-1]['bias'][0,0,0,start:end] = np.linspace(-0.1, 1.1, end-start, dtype=np.float32)
 
             with tf.variable_scope('BalancedLoss') as scope:
-                self.cur_learned_projsigs[-1]['pos'] = tf.get_variable('pos_'+cur_image_size, dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
-                self.cur_learned_projsigs[-1]['neg'] = tf.get_variable('neg_'+cur_image_size, dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
+                self.cur_learned_projsigs[-1]['pos'] = tf.get_variable('pos_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
+                self.cur_learned_projsigs[-1]['neg'] = tf.get_variable('neg_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
 
 
         # end __init__
@@ -184,7 +185,7 @@ class BalancedLoss(object):
         return feed_dict
 
 
-    def eval_loss(self, inp, target):
+    def eval_loss(self, recon, target):
         losses = []
 
         def get_logits(inp, cur_projsig):
@@ -194,7 +195,8 @@ class BalancedLoss(object):
 
         # feed through cur_learned_projsigs
         for i, cur_image_size in enumerate(self.image_scales):
-            cur_target = slim.avg_pool_2d(target, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
+            cur_target = slim.avg_pool2d(target, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
+            cur_recon= slim.avg_pool2d(recon, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
             print(cur_target)
 
             ytargets = tf.nn.sigmoid(get_logits(cur_target, self.cur_learned_projsigs[i]))
@@ -204,7 +206,7 @@ class BalancedLoss(object):
 
             with tf.control_dependencies([update_pos, update_neg]):
                 # feed through eval_placeholders
-                cur_logits = get_logits(inp, self.eval_placeholders[i])
+                cur_logits = get_logits(cur_recon, self.eval_placeholders[i])
                 ytargets = tf.nn.sigmoid(get_logits(cur_target, self.eval_placeholders[i]))
 
                 for ps in xrange(self.num_projsigs):

@@ -82,8 +82,8 @@ def get_dataset(dataset_name):
         num_img = 628
         ind_offset = 0
     elif dataset_name=='celeba64':
-        folder_path = '~/scratch/Datasets/CelebA/mycrop64/'
-        #folder_path = "~/Documents/Datasets/CelebA/mycrop64/"
+        #folder_path = '~/scratch/Datasets/CelebA/mycrop64/'
+        folder_path = "~/Documents/Datasets/CelebA/mycrop64/"
         num_img = 190000
         ind_offset = 0
     return get_folder(folder_path, 

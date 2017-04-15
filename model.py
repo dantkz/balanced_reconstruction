@@ -269,7 +269,7 @@ def train(train_dir):
         beta0 = 1.00
 
         summary_step = 0
-        cur_lr = 0.00001
+        cur_lr = 0.0001
         for epoch in xrange(num_epochs):
             if epoch%15 == 14:
                 cur_lr = cur_lr/10.

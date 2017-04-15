@@ -111,7 +111,7 @@ class VAE(object):
 
 class BalancedLoss(object):
 
-    def __init__(self, batch_size, image_size, color_chn, images, num_steps, ksize=1, num_projsigs=64):
+    def __init__(self, batch_size, image_size, color_chn, images, num_steps, ksize=3, num_projsigs=64):
         # params
         self.batch_size = batch_size
         self.image_size = image_size
@@ -134,11 +134,14 @@ class BalancedLoss(object):
 
         # Variables
         self.cur_learned_projsigs = {}
-        self.cur_learned_projsigs['kernel'] = np.zeros([self.ksize, self.ksize, self.color_chn, self.num_projsigs], dtype=np.float32)
-        self.cur_learned_projsigs['kernel'][self.ksize//2, self.ksize//2, :, :] = 1./self.color_chn
+        self.cur_learned_projsigs['kernel'] = 0.001*np.ones([self.ksize, self.ksize, self.color_chn, self.num_projsigs], dtype=np.float32)
+        self.cur_learned_projsigs['bias'] = (0.001*np.ones([1, 1, 1, self.num_projsigs])).astype(np.float32)
 
-        self.cur_learned_projsigs['bias'] = (np.zeros([1, 1, 1, self.num_projsigs])).astype(np.float32)
-        self.cur_learned_projsigs['bias'][0, 0, 0, :] = np.linspace(-1, 1, self.num_projsigs, dtype=np.float32)
+        for ch in xrange(self.color_chn):
+            start = int(ch*self.num_projsigs/self.color_chn)
+            end = int((ch+1)*self.num_projsigs/self.color_chn)
+            self.cur_learned_projsigs['kernel'][self.ksize//2, self.ksize//2, ch, start:end] = 1.
+            self.cur_learned_projsigs['bias'][0,0,0,start:end] = np.linspace(-0.1, 1.1, end-start, dtype=np.float32)
 
         with tf.variable_scope('BalancedLoss') as scope:
             self.cur_learned_projsigs['pos'] = tf.get_variable('pos', dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
@@ -269,7 +272,7 @@ def train(train_dir):
         cur_lr = 0.0001
         for epoch in xrange(num_epochs):
             if epoch%15 == 14:
-                cur_learning_rate = cur_learning_rate/10.
+                cur_lr = cur_lr/10.
                 
             balanced_loss.next_epoch(sess)
 
@@ -298,6 +301,12 @@ def train(train_dir):
                 if (epoch%2==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
                     checkpoint_path = os.path.join(train_dir, 'model.ckpt')
                     saver.save(sess, checkpoint_path, global_step=(step))
+
+                if (step + 1) == num_steps:
+                    recs_mu = sess.run(model.recs_mu, feed_dict=cur_feed_dict)
+                    for i in xrange(min(10,batch_size)):
+                        util.save_img(recs_mu[i,:,:,:], os.path.join(train_dir, 'epoch_%d_img_%d.png' % (epoch, i)))
+
 
         coord.request_stop()
         coord.join(threads)

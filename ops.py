@@ -146,7 +146,7 @@ class ConvEncoder(object):
 def variable(name, shape=None, initializer=tf.contrib.layers.xavier_initializer_conv2d(uniform=False), trainable=True):
     #tf.constant_initializer(0.0)
     #tf.random_normal_initializer(stddev=0.0001)
-    with tf.device('/cpu:0'):
+    with tf.device('/gpu:0'):
         var = tf.get_variable(name, shape, initializer=initializer, trainable=trainable)
     return var
 

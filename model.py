@@ -269,7 +269,7 @@ def train(train_dir):
         beta0 = 1.00
 
         summary_step = 0
-        cur_lr = 0.0001
+        cur_lr = 0.00001
         for epoch in xrange(num_epochs):
             if epoch%15 == 14:
                 cur_lr = cur_lr/10.
@@ -292,7 +292,7 @@ def train(train_dir):
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')
                     print (format_str % (datetime.now(), epoch, num_epochs-1, step, num_steps-1, model_loss_val))
 
-                if step%200==0:
+                if step%100==0 or (step + 1) == num_steps:
                     summary_str = sess.run(summary_op, feed_dict=cur_feed_dict)
                     summary_writer.add_summary(summary_str, summary_step)
                     summary_step += 1

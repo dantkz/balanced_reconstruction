@@ -110,7 +110,7 @@ class VAE(object):
 
 class BalancedLoss(object):
 
-    def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=3, num_projsigs=32):
+    def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=5, num_projsigs=64):
         # params
         self.batch_size = batch_size
         self.image_size = image_size
@@ -251,7 +251,7 @@ def train(train_dir):
         num_steps = math.ceil(dataset.train.num_img/batch_size)
         num_epochs = 60
 
-        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16, 8])
+        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16])
 
         model = VAE(batch_size, code_dim, img_encoder_params, img_decoder_params, train_images, balanced_loss.eval_loss)
         model.train_graph()
@@ -286,7 +286,8 @@ def train(train_dir):
             if epoch%30 == 29:
                 cur_lr = cur_lr/10.
                 
-            balanced_loss.next_epoch(sess)
+            if epoch<3:
+                balanced_loss.next_epoch(sess)
 
             for step in xrange(num_steps):
                 cur_feed_dict = balanced_loss.cur_feed_dict()
@@ -300,17 +301,17 @@ def train(train_dir):
 
                 model_loss_val = sess.run(model.loss, feed_dict=cur_feed_dict)
 
-                if step%200==0 or (step + 1) == num_steps:
+                if step%500==0 or (step + 1) == num_steps:
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')
                     print (format_str % (datetime.now(), epoch, num_epochs-1, step, num_steps-1, model_loss_val))
 
-                if step%100==0 or (step + 1) == num_steps:
+                if step%500==0 or (step + 1) == num_steps:
                     summary_str = sess.run(summary_op, feed_dict=cur_feed_dict)
                     summary_writer.add_summary(summary_str, summary_step)
                     summary_step += 1
 
                 # Save the model checkpoint periodically.
-                if (epoch%2==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
+                if (epoch%3==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
                     checkpoint_path = os.path.join(train_dir, 'model.ckpt')
                     saver.save(sess, checkpoint_path, global_step=(epoch))
 

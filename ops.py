@@ -272,16 +272,16 @@ def train(loss, global_step, learning_rate, target_vars=None, name='', moving_av
 
 class GaussianParameterizer(object):
 
-    def __init__(self, inpdim, outdim, name='', ksize=1, fcdim=256):
-        self.inpdim = inpdim
+    def __init__(self, outdim, name='', ksize=1):
         self.outdim = outdim
         self.ksize = ksize
-        self.fcdim = fcdim
         self.name = name
 
     def get_params(self, inp, is_training, reuse=False):
-        mu = convlayer(self.name+'_mu', inp, self.ksize, self.inpdim, self.outdim, stride=1, reuse=reuse, nonlin=tf.identity, dobn=False, padding='SAME', is_training=is_training)
-        sigma = convlayer(self.name+'_sigma', inp, self.ksize, self.inpdim, self.outdim, stride=1, nonlin=tf.nn.softplus, dobn=False, reuse=reuse, padding='SAME', is_training=is_training)
+        inpdim = inp.get_shape().as_list[-1]
+        halfdim = inpdim//2
+        mu = convlayer(self.name+'_mu', inp[:,:,:,0:halfdim], self.ksize, halfdim, self.outdim, stride=1, reuse=reuse, nonlin=tf.identity, dobn=False, padding='SAME', is_training=is_training)
+        sigma = convlayer(self.name+'_sigma', inp[:,:,:,halfdim:inpdim], self.ksize, halfdim, self.outdim, stride=1, nonlin=tf.nn.softplus, dobn=False, reuse=reuse, padding='SAME', is_training=is_training)
         return mu, sigma
 
 

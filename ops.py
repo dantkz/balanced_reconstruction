@@ -278,7 +278,7 @@ class GaussianParameterizer(object):
         self.name = name
 
     def get_params(self, inp, is_training, reuse=False):
-        inpdim = inp.get_shape().as_list[-1]
+        inpdim = inp.get_shape().as_list()[-1]
         halfdim = inpdim//2
         mu = convlayer(self.name+'_mu', inp[:,:,:,0:halfdim], self.ksize, halfdim, self.outdim, stride=1, reuse=reuse, nonlin=tf.identity, dobn=False, padding='SAME', is_training=is_training)
         sigma = convlayer(self.name+'_sigma', inp[:,:,:,halfdim:inpdim], self.ksize, halfdim, self.outdim, stride=1, nonlin=tf.nn.softplus, dobn=False, reuse=reuse, padding='SAME', is_training=is_training)

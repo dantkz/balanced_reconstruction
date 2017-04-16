@@ -39,7 +39,7 @@ class VAE(object):
         # Variables
         with tf.variable_scope("model") as scope:
             self.img_encoder = ops.ConvEncoder(**img_encoder_params)
-            self.img_parameterizer = ops.GaussianParameterizer(self.img_encoder.outdim(), self.code_dim, 'img_codes', ksize=1)
+            self.img_parameterizer = ops.GaussianParameterizer(self.code_dim, 'img_codes', ksize=1)
 
             self.img_decoder = ops.ConvDecoder(**img_decoder_params)
 

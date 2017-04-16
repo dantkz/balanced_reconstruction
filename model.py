@@ -15,8 +15,6 @@ import util
 import ops
 import dataset_manager
 
-epsilon = 0.0000001
-
 class VAE(object):
     def __init__(self, batch_size, code_dim, img_encoder_params, img_decoder_params, images, eval_loss):
 
@@ -154,7 +152,6 @@ class BalancedLoss(object):
                 self.cur_learned_projsigs[-1]['pos'] = tf.get_variable('pos_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
                 self.cur_learned_projsigs[-1]['neg'] = tf.get_variable('neg_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
 
-
         # end __init__
 
 
@@ -166,7 +163,7 @@ class BalancedLoss(object):
             self.cur_eval_projsigs[i]['bias'] = self.cur_learned_projsigs[i]['bias']
             pos = self.cur_learned_projsigs[i]['pos'].eval(session=sess)
             neg = self.cur_learned_projsigs[i]['neg'].eval(session=sess)
-            self.cur_eval_projsigs[i]['pos_weight'] =  (epsilon + neg) / (epsilon + pos)
+            self.cur_eval_projsigs[i]['pos_weight'] =  (1.0 + neg) / (1.0 + pos)
 
         # get new values for cur_learned_projsigs
         for i, _ in enumerate(self.image_scales):
@@ -197,7 +194,6 @@ class BalancedLoss(object):
         for i, cur_image_size in enumerate(self.image_scales):
             cur_target = slim.avg_pool2d(target, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
             cur_recon= slim.avg_pool2d(recon, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
-            print(cur_target)
 
             ytargets = tf.nn.sigmoid(get_logits(cur_target, self.cur_learned_projsigs[i]))
 
@@ -253,7 +249,7 @@ def train(train_dir):
         train_images = dataset.train.next_batch(batch_size)
 
         num_steps = math.ceil(dataset.train.num_img/batch_size)
-        num_epochs = 30
+        num_epochs = 60
 
         balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16, 8])
 
@@ -281,13 +277,13 @@ def train(train_dir):
 
         sess.run(tf.global_variables_initializer())
 
-        stocha0 = 0.0
-        beta0 = 1.00
+        stocha0 = 1.0
+        beta0 = 1.0
 
         summary_step = 0
         cur_lr = 0.0001
         for epoch in xrange(num_epochs):
-            if epoch%15 == 14:
+            if epoch%30 == 29:
                 cur_lr = cur_lr/10.
                 
             balanced_loss.next_epoch(sess)
@@ -320,8 +316,10 @@ def train(train_dir):
 
                 if (step + 1) == num_steps:
                     recs_mu = sess.run(model.recs_mu, feed_dict=cur_feed_dict)
+                    cur_images = sess.run(model.images, feed_dict=cur_feed_dict)
                     for i in xrange(min(10,batch_size)):
-                        util.save_img(recs_mu[i,:,:,:], os.path.join(train_dir, 'epoch_%d_img_%d.png' % (epoch, i)))
+                        tmp = np.concatenate([cur_images[i,:,:,:], recs_mu[i,:,:,:]], axis=0)
+                        util.save_img(tmp, os.path.join(train_dir, 'epoch_%d_img_%d.png' % (epoch, i)))
 
 
         coord.request_stop()

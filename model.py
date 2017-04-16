@@ -149,8 +149,8 @@ class BalancedLoss(object):
                 self.cur_learned_projsigs[-1]['bias'][0,0,0,start:end] = np.linspace(-0.1, 1.1, end-start, dtype=np.float32)
 
             with tf.variable_scope('BalancedLoss') as scope:
-                self.cur_learned_projsigs[-1]['pos'] = tf.get_variable('pos_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
-                self.cur_learned_projsigs[-1]['neg'] = tf.get_variable('neg_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
+                self.cur_learned_projsigs[-1]['pos'] = tf.get_variable('pos_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(1.0))
+                self.cur_learned_projsigs[-1]['neg'] = tf.get_variable('neg_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(1.0))
 
         # end __init__
 
@@ -315,9 +315,8 @@ def train(train_dir):
                     saver.save(sess, checkpoint_path, global_step=(epoch))
 
                 if (step + 1) == num_steps:
-                    recs_mu = sess.run(model.recs_mu, feed_dict=cur_feed_dict)
-                    cur_images = sess.run(model.images, feed_dict=cur_feed_dict)
-                    for i in xrange(min(10,batch_size)):
+                    recs_mu, cur_images = sess.run([model.recs_mu, model.images], feed_dict=cur_feed_dict)
+                    for i in xrange(min(20,batch_size)):
                         tmp = np.concatenate([cur_images[i,:,:,:], recs_mu[i,:,:,:]], axis=0)
                         util.save_img(tmp, os.path.join(train_dir, 'epoch_%d_img_%d.png' % (epoch, i)))
 

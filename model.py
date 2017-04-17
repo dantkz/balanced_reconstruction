@@ -110,7 +110,8 @@ class VAE(object):
 
 class BalancedLoss(object):
 
-    def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=5, num_projsigs=64):
+    #TODO  ksize=5
+    def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=3, num_projsigs=64):
         # params
         self.batch_size = batch_size
         self.image_size = image_size
@@ -223,11 +224,12 @@ def train(train_dir):
     with tf.Graph().as_default():
         global_step = tf.Variable(0, trainable=False)
         batch_size = 32
-        code_dim = 64
+        #TODO  code_dim = 64
+        code_dim = 512
 
         img_encoder_params = {
                         'scopename' : 'img_enc', 
-                        'channels' : [32,32,64,128,256,512],
+                        'channels' : [32,32,64,128,256,1024], # TODO 256, 512]
                         'strides' :  [1, 2, 2, 2,  2,  4], # 64, 32, 16, 8, 4, 1
                         'ksizes' :   [3, 3, 3, 3,  3,  4],
                         'batch_norm' : True
@@ -283,11 +285,10 @@ def train(train_dir):
         summary_step = 0
         cur_lr = 0.0001
         for epoch in xrange(num_epochs):
-            if epoch%30 == 29:
+            if epoch%30 == 5:
                 cur_lr = cur_lr/10.
                 
-            if epoch<3:
-                balanced_loss.next_epoch(sess)
+            balanced_loss.next_epoch(sess)
 
             for step in xrange(num_steps):
                 cur_feed_dict = balanced_loss.cur_feed_dict()
@@ -328,7 +329,7 @@ def train(train_dir):
 
 
 def main(argv=None):  # pylint: disable=unused-argument
-    train_dir = 'logs/'
+    train_dir = 'logs1024/' # TODO logs/
 
     if tf.gfile.Exists(train_dir):
         tf.gfile.DeleteRecursively(train_dir)

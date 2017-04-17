@@ -110,7 +110,7 @@ class VAE(object):
 
 class BalancedLoss(object):
 
-    def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=3, num_projsigs=32):
+    def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=3, num_projsigs=64):
         # params
         self.batch_size = batch_size
         self.image_size = image_size
@@ -211,9 +211,9 @@ class BalancedLoss(object):
                             logits=cur_logits[:,:,:,ps:ps+1], 
                             pos_weight=self.eval_placeholders[i]['pos_weight'][ps]
                         )
+                    cur_loss = tf.reduce_mean(tf.reduce_sum(cur_loss, axis=(1,2,3)), name='wcel_'+str(i) + '_' + str(ps))
                     print(cur_loss)
 
-                    cur_loss = tf.reduce_mean(tf.reduce_sum(cur_loss, axis=(1,2,3)), name='wcel_'+str(ps))
                     losses.append(cur_loss)
 
         return losses
@@ -300,11 +300,11 @@ def train(train_dir):
 
                 model_loss_val = sess.run(model.loss, feed_dict=cur_feed_dict)
 
-                if step%200==0 or (step + 1) == num_steps:
+                if step%500==0 or (step + 1) == num_steps:
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')
                     print (format_str % (datetime.now(), epoch, num_epochs-1, step, num_steps-1, model_loss_val))
 
-                if step%100==0 or (step + 1) == num_steps:
+                if step%500==0 or (step + 1) == num_steps:
                     summary_str = sess.run(summary_op, feed_dict=cur_feed_dict)
                     summary_writer.add_summary(summary_str, summary_step)
                     summary_step += 1

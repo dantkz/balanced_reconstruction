@@ -194,17 +194,19 @@ class BalancedLoss(object):
         # feed through cur_learned_projsigs
         for i, cur_image_size in enumerate(self.image_scales):
             cur_target = slim.avg_pool2d(target, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
+            print(cur_target)
             cur_recon= slim.avg_pool2d(recon, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
+            print(cur_recon)
 
-            ytargets = tf.nn.sigmoid(get_logits(cur_target, self.cur_learned_projsigs[i]))
+            ytargets = tf.round(tf.nn.sigmoid(get_logits(cur_target, self.cur_learned_projsigs[i])))
 
             update_pos = tf.assign_add(self.cur_learned_projsigs[i]['pos'], tf.reduce_mean(ytargets, axis=(0,1,2)))
-            update_neg = tf.assign_add(self.cur_learned_projsigs[i]['neg'], tf.reduce_mean(1-ytargets, axis=(0,1,2)))
+            update_neg = tf.assign_add(self.cur_learned_projsigs[i]['neg'], tf.reduce_mean(1.-ytargets, axis=(0,1,2)))
 
             with tf.control_dependencies([update_pos, update_neg]):
                 # feed through eval_placeholders
                 cur_logits = get_logits(cur_recon, self.eval_placeholders[i])
-                ytargets = tf.nn.sigmoid(get_logits(cur_target, self.eval_placeholders[i]))
+                ytargets = tf.round(tf.nn.sigmoid(get_logits(cur_target, self.eval_placeholders[i])))
 
                 for ps in xrange(self.num_projsigs):
                     cur_loss = tf.nn.weighted_cross_entropy_with_logits(

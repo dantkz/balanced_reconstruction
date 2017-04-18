@@ -203,8 +203,8 @@ def upconvlayer_tr(i, inp, ksize, inpdim, outdim, outshape, stride, reuse, nonli
 
 def get_color_mu(name, inp, outdim, ksize=1, reuse=False):
     inpdim = inp.get_shape().as_list()[3]
-    lin_mu = convlayer(name+'_color', inp, ksize, inpdim, outdim, 1, reuse=reuse, nonlin=tf.nn.sigmoid, dobn=False, padding='SAME')
-    mu = -0.1 + 1.2*lin_mu
+    lin_mu = convlayer(name+'_color', inp, ksize, inpdim, outdim, 1, reuse=reuse, nonlin=tf.nn.tanh, dobn=False, padding='SAME')
+    mu = 0.5 + 0.5*lin_mu
     return mu
 
 

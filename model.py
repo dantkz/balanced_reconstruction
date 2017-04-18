@@ -110,7 +110,6 @@ class VAE(object):
 
 class BalancedLoss(object):
 
-    #TODO  ksize=5
     def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=3, num_projsigs=64):
         # params
         self.batch_size = batch_size
@@ -140,8 +139,8 @@ class BalancedLoss(object):
 
 
             # Variables
-            self.cur_learned_projsigs[-1]['kernel'] = 0.001*np.ones([self.ksize, self.ksize, self.color_chn, self.num_projsigs], dtype=np.float32)
-            self.cur_learned_projsigs[-1]['bias'] = (0.001*np.ones([1, 1, 1, self.num_projsigs])).astype(np.float32)
+            self.cur_learned_projsigs[-1]['kernel'] = 0.0001*np.ones([self.ksize, self.ksize, self.color_chn, self.num_projsigs], dtype=np.float32)
+            self.cur_learned_projsigs[-1]['bias'] = (0.0001*np.ones([1, 1, 1, self.num_projsigs])).astype(np.float32)
 
             for ch in xrange(self.color_chn):
                 start = int(ch*self.num_projsigs/self.color_chn)
@@ -225,13 +224,12 @@ class BalancedLoss(object):
 def train(train_dir):
     with tf.Graph().as_default():
         global_step = tf.Variable(0, trainable=False)
-        batch_size = 32
-        #TODO  code_dim = 64
-        code_dim = 512
+        batch_size = 16
+        code_dim = 128
 
         img_encoder_params = {
                         'scopename' : 'img_enc', 
-                        'channels' : [32,32,64,128,256,1024], # TODO 256, 512]
+                        'channels' : [32,32,64,128,256,512], 
                         'strides' :  [1, 2, 2, 2,  2,  4], # 64, 32, 16, 8, 4, 1
                         'ksizes' :   [3, 3, 3, 3,  3,  4],
                         'batch_norm' : True
@@ -239,10 +237,10 @@ def train(train_dir):
 
         img_decoder_params = {
                         'scopename' : 'img_dec', 
-                        'channels' :  [512, 256, 128, 64, 32, 32],
-                        'ksizes' :    [4,   3,   3,   3,  3,  1 ],
-                        'outshapes' : [4,   8,   16,  32, 64, 64],
-                        'colorout' :  [0,   0,   0,   0,  0,  1 ],
+                        'channels' :  [512, 256, 128, 64, 32],
+                        'ksizes' :    [4,   3,   3,   3,  3],
+                        'outshapes' : [4,   8,   16,  32, 64],
+                        'colorout' :  [0,   0,   0,   0,  1 ],
                         'COLOR_CHN' : 3,
                         'outlin' : False,
                         'batch_norm' : True
@@ -331,7 +329,7 @@ def train(train_dir):
 
 
 def main(argv=None):  # pylint: disable=unused-argument
-    train_dir = 'logs1024/' # TODO logs/
+    train_dir = 'logs128/'
 
     if tf.gfile.Exists(train_dir):
         tf.gfile.DeleteRecursively(train_dir)

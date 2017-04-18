@@ -167,8 +167,8 @@ class BalancedLoss(object):
 
         # get new values for cur_learned_projsigs
         for i, _ in enumerate(self.image_scales):
-            self.cur_learned_projsigs[i]['kernel'] = np.random.randn(self.ksize, self.ksize, self.color_chn, self.num_projsigs).astype(np.float32)
-            self.cur_learned_projsigs[i]['bias'] = (np.random.randn(1, 1, 1, self.num_projsigs)).astype(np.float32)
+            self.cur_learned_projsigs[i]['kernel'] = (100.*np.random.randn(self.ksize, self.ksize, self.color_chn, self.num_projsigs)).astype(np.float32)
+            self.cur_learned_projsigs[i]['bias'] = (100.*np.random.randn(1, 1, 1, self.num_projsigs)).astype(np.float32)
             tf.assign(self.cur_learned_projsigs[i]['pos'], np.zeros([self.num_projsigs], dtype=np.float32)).eval(session=sess)
             tf.assign(self.cur_learned_projsigs[i]['neg'], np.zeros([self.num_projsigs], dtype=np.float32)).eval(session=sess)
 

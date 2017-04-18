@@ -110,6 +110,7 @@ class VAE(object):
 
 class BalancedLoss(object):
 
+    #TODO  ksize=5
     def __init__(self, batch_size, image_size, color_chn, images, num_steps, image_scales, ksize=3, num_projsigs=64):
         # params
         self.batch_size = batch_size
@@ -223,11 +224,12 @@ def train(train_dir):
     with tf.Graph().as_default():
         global_step = tf.Variable(0, trainable=False)
         batch_size = 32
-        code_dim = 64
+        #TODO  code_dim = 64
+        code_dim = 512
 
         img_encoder_params = {
                         'scopename' : 'img_enc', 
-                        'channels' : [32,32,64,128,256,512],
+                        'channels' : [32,32,64,128,256,1024], # TODO 256, 512]
                         'strides' :  [1, 2, 2, 2,  2,  4], # 64, 32, 16, 8, 4, 1
                         'ksizes' :   [3, 3, 3, 3,  3,  4],
                         'batch_norm' : True
@@ -251,7 +253,7 @@ def train(train_dir):
         num_steps = math.ceil(dataset.train.num_img/batch_size)
         num_epochs = 60
 
-        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16, 8])
+        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16])
 
         model = VAE(batch_size, code_dim, img_encoder_params, img_decoder_params, train_images, balanced_loss.eval_loss)
         model.train_graph()
@@ -283,7 +285,7 @@ def train(train_dir):
         summary_step = 0
         cur_lr = 0.0001
         for epoch in xrange(num_epochs):
-            if epoch%30 == 29:
+            if epoch%30 == 5:
                 cur_lr = cur_lr/10.
                 
             balanced_loss.next_epoch(sess)
@@ -310,7 +312,7 @@ def train(train_dir):
                     summary_step += 1
 
                 # Save the model checkpoint periodically.
-                if (epoch%2==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
+                if (epoch%3==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
                     checkpoint_path = os.path.join(train_dir, 'model.ckpt')
                     saver.save(sess, checkpoint_path, global_step=(epoch))
 
@@ -327,7 +329,7 @@ def train(train_dir):
 
 
 def main(argv=None):  # pylint: disable=unused-argument
-    train_dir = 'logs/'
+    train_dir = 'logs1024/' # TODO logs/
 
     if tf.gfile.Exists(train_dir):
         tf.gfile.DeleteRecursively(train_dir)

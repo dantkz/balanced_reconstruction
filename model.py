@@ -145,8 +145,8 @@ class BalancedLoss(object):
             for ch in xrange(self.color_chn):
                 start = int(ch*self.num_projsigs/self.color_chn)
                 end = int((ch+1)*self.num_projsigs/self.color_chn)
-                self.cur_learned_projsigs[-1]['kernel'][self.ksize//2, self.ksize//2, ch, start:end] = 1.
-                self.cur_learned_projsigs[-1]['bias'][0,0,0,start:end] = np.linspace(-0.1, 1.1, end-start, dtype=np.float32)
+                self.cur_learned_projsigs[-1]['kernel'][self.ksize//2, self.ksize//2, ch, start:end] = 100.
+                self.cur_learned_projsigs[-1]['bias'][0,0,0,start:end] = np.linspace(-10., 110., end-start, dtype=np.float32)
 
             with tf.variable_scope('BalancedLoss') as scope:
                 self.cur_learned_projsigs[-1]['pos'] = tf.get_variable('pos_'+str(cur_image_size), dtype=tf.float32, shape=[self.num_projsigs], trainable=False, initializer=tf.constant_initializer(1.0))
@@ -237,10 +237,10 @@ def train(train_dir):
 
         img_decoder_params = {
                         'scopename' : 'img_dec', 
-                        'channels' :  [512, 256, 128, 64, 32],
-                        'ksizes' :    [4,   3,   3,   3,  3],
-                        'outshapes' : [4,   8,   16,  32, 64],
-                        'colorout' :  [0,   0,   0,   0,  1 ],
+                        'channels' :  [512, 256, 128, 64, 32, 32],
+                        'ksizes' :    [4,   3,   3,   3,  3,  1],
+                        'outshapes' : [4,   8,   16,  32, 64, 64],
+                        'colorout' :  [0,   0,   0,   0,  0,  1 ],
                         'COLOR_CHN' : 3,
                         'outlin' : False,
                         'batch_norm' : True
@@ -285,7 +285,7 @@ def train(train_dir):
         summary_step = 0
         cur_lr = 0.0001
         for epoch in xrange(num_epochs):
-            if epoch%30 == 5:
+            if epoch%30 == 15:
                 cur_lr = cur_lr/10.
                 
             balanced_loss.next_epoch(sess)

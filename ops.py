@@ -285,73 +285,12 @@ class GaussianParameterizer(object):
         return mu, sigma
 
 
-class GumbelSoftmaxParameterizer(object):
-
-    def __init__(self, inpdim, outdim, name='', ksize=1):
-        self.inpdim = inpdim
-        self.outdim = outdim
-        self.ksize = ksize
-        self.name = name
-
-    def get_params(self, inp, is_training, reuse=False):
-        # logits
-        logits_y = convlayer(self.name+'_logits', inp, self.ksize, self.inpdim, self.outdim, stride=1, reuse=reuse, nonlin=tf.identity, dobn=False, padding='SAME', is_training=is_training)
-        return logits_y
-
-def sample_gumbelsoftmax(logits, name, temperature, hard=False):
-    def sample_gumbel(shape, eps=1e-20): 
-        """Sample from Gumbel(0, 1)"""
-        U = tf.random_uniform(shape,minval=0,maxval=1)
-        return -tf.log(-tf.log(U + eps) + eps)
-    
-    def gumbel_softmax_sample(logits, temperature): 
-        """ Draw a sample from the Gumbel-Softmax distribution"""
-        y = logits + sample_gumbel(tf.shape(logits))
-        return tf.nn.softmax( y / temperature)
-    
-    def gumbel_softmax(logits_y, temperature, hard=False):
-        """Sample from the Gumbel-Softmax distribution and optionally discretize.
-        Args:
-          logits: [batch_size, n_class] unnormalized log-probs
-          temperature: non-negative scalar
-          hard: if True, take argmax, but differentiate w.r.t. soft sample y
-        Returns:
-          [batch_size, n_class] sample from the Gumbel-Softmax distribution.
-          If hard=True, then the returned sample will be one-hot, otherwise it will
-          be a probabilitiy distribution that sums to 1 across classes
-        """
-        batch_size = logits_y.get_shape().as_list()[0]
-        h = logits_y.get_shape().as_list()[1]
-        w = logits_y.get_shape().as_list()[2]
-        category_num = 4
-        outdim = logits_y.get_shape().as_list()[3]
-        assert outdim//category_num==outdim/category_num, 'outdim(%d) must be exactly divisible by category_num(%d)' % (outdim, category_num)
-        logits_y = tf.reshape(logits_y, [batch_size, h, w, outdim//category_num, category_num])
-        y = gumbel_softmax_sample(logits_y, temperature)
-        if hard:
-            k = tf.shape(logits_y)[-1]
-            #y_hard = tf.cast(tf.one_hot(tf.argmax(y,1),k), y.dtype)
-            y_hard = tf.cast(tf.equal(y,tf.reduce_max(y,1,keep_dims=True)),y.dtype)
-            y = tf.stop_gradient(y_hard - y) + y
-            
-        y = tf.reshape(y, [batch_size, h, w, outdim])
-        return y
-
-    return gumbel_softmax(logits, temperature, hard)
-
-
-def gumbelsoftmax_kldiv(logits_y):
-    batch_size = logits_y.get_shape().as_list()[0]
-    h = logits_y.get_shape().as_list()[1]
-    w = logits_y.get_shape().as_list()[2]
-    outdim = logits_y.get_shape().as_list()[3]
-    logits_y = tf.reshape(logits_y, [batch_size, h, w, outdim//2, 2])
-    q_y = tf.nn.softmax(logits_y) 
-    log_q_y = tf.log(q_y + 1e-20)
-    kl_tmp = q_y*(log_q_y-tf.log(1.0/2))
-    KL = tf.reduce_sum(kl_tmp,[1, 2, 3, 4])
-    return KL
-
+def bernoulli_entropy(logits, pos_weight=1.0):
+    log_sig = -tf.log(1. + tf.exp(-logits))
+    log_1_sig = - logits + log_sig
+    sig = tf.sigmoid(logits)
+    entropy = -pos_weight*sig*log_sig - (1.-sig)*log_1_sig
+    return entropy
 
 def sample_gaussian(codes_mu, codes_sigma, noise, name, coeff=1.0):
     codes = codes_mu + coeff*(codes_sigma*noise)

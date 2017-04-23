@@ -234,15 +234,16 @@ class BalancedLoss(object):
                             targets=ytargets[:,:,:,ps:ps+1], 
                             logits=cur_logits[:,:,:,ps:ps+1], 
                             pos_weight=self.eval_placeholders[i]['pos_weight'][ps]
-                        ) + tf.nn.weighted_cross_entropy_with_logits(
-                            targets=cur_labels[:,:,:,ps:ps+1], 
-                            logits=ylogits[:,:,:,ps:ps+1], 
-                            pos_weight=1.0
-                        ) - ops.bernoulli_entropy(
-                            logits=cur_logits[:,:,:,ps:ps+1], 
-                            pos_weight=1.0,
-                            doround=FLAGS.round_real
                         )
+                        #+ tf.nn.weighted_cross_entropy_with_logits(
+                        #    targets=cur_labels[:,:,:,ps:ps+1], 
+                        #    logits=ylogits[:,:,:,ps:ps+1], 
+                        #    pos_weight=1.0
+                        #) - ops.bernoulli_entropy(
+                        #    logits=cur_logits[:,:,:,ps:ps+1], 
+                        #    pos_weight=1.0,
+                        #    doround=FLAGS.round_real
+                        #)
                     cur_loss = tf.reduce_mean(tf.reduce_sum(cur_loss, axis=(1,2,3)), name='wcel_'+str(i) + '_' + str(ps))
                     print(cur_loss)
 
@@ -281,7 +282,7 @@ def train(train_dir):
         train_images = dataset.train.next_batch(batch_size)
 
         num_steps = math.ceil(dataset.train.num_img/batch_size)
-        num_epochs = 60
+        num_epochs = 100
 
         balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16])
 
@@ -359,7 +360,7 @@ def train(train_dir):
 
 
 def main(argv=None):  # pylint: disable=unused-argument
-    train_dir = 'logsjsc/'
+    train_dir = 'logskl/'
 
     if tf.gfile.Exists(train_dir):
         tf.gfile.DeleteRecursively(train_dir)

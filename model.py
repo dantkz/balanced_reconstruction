@@ -17,8 +17,8 @@ import dataset_manager
 
 tf_flags = tf.app.flags
 FLAGS = tf_flags.FLAGS
-tf_flags.DEFINE_boolean('round_gen', False, 'round generator output')
-tf_flags.DEFINE_boolean('round_real', False, 'round real data')
+tf_flags.DEFINE_boolean('round_gen', True, 'round generator output')
+tf_flags.DEFINE_boolean('round_real', True, 'round real data')
 #tf_flags.DEFINE_integer('dim', -1, '')
 #tf_flags.DEFINE_float('disc_lr_coeff', 1.0, 'coefficient for discriminator learning rate')
 
@@ -240,7 +240,8 @@ class BalancedLoss(object):
                             pos_weight=1.0
                         ) - ops.bernoulli_entropy(
                             logits=cur_logits[:,:,:,ps:ps+1], 
-                            pos_weight=1.0
+                            pos_weight=1.0,
+                            doround=FLAGS.round_real
                         )
                     cur_loss = tf.reduce_mean(tf.reduce_sum(cur_loss, axis=(1,2,3)), name='wcel_'+str(i) + '_' + str(ps))
                     print(cur_loss)

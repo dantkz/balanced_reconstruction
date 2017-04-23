@@ -285,10 +285,13 @@ class GaussianParameterizer(object):
         return mu, sigma
 
 
-def bernoulli_entropy(logits, pos_weight=1.0):
+def bernoulli_entropy(logits, pos_weight=1.0, doround=True):
     log_sig = -tf.log(1. + tf.exp(-logits))
     log_1_sig = - logits + log_sig
-    sig = tf.sigmoid(logits)
+    if doround:
+        sig = tf.round(tf.sigmoid(logits))
+    else:
+        sig = tf.sigmoid(logits)
     entropy = -pos_weight*sig*log_sig - (1.-sig)*log_1_sig
     return entropy
 

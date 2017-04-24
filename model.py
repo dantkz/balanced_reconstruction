@@ -24,7 +24,6 @@ tf_flags.DEFINE_boolean('round_real', True, 'round real data')
 
 class VAE(object):
     def __init__(self, batch_size, code_dim, img_encoder_params, img_decoder_params, images, eval_loss):
-
         self.batch_size             = batch_size
         self.code_dim               = code_dim
 
@@ -165,7 +164,7 @@ class BalancedLoss(object):
     def next_epoch(self, sess):
         # push learned values from cur_learned_projsigs to cur_eval_projsigs
         for i, _ in enumerate(self.image_scales):
-            self.cur_eval_projsigs[i] = {}
+            #self.cur_eval_projsigs[i] = {} # TODO
             self.cur_eval_projsigs[i]['kernel'] = self.cur_learned_projsigs[i]['kernel']
             self.cur_eval_projsigs[i]['bias'] = self.cur_learned_projsigs[i]['bias']
             pos = self.cur_learned_projsigs[i]['pos'].eval(session=sess)
@@ -203,11 +202,9 @@ class BalancedLoss(object):
             cur_recon= slim.avg_pool2d(recon, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
 
             ylogits = get_logits(cur_target, self.cur_learned_projsigs[i])
-
+            ytargets = tf.nn.sigmoid(ylogits)
             if FLAGS.round_real: 
-                ytargets = tf.round(tf.nn.sigmoid(ylogits))
-            else:
-                ytargets = tf.nn.sigmoid(ylogits)
+                ytargets = tf.round(ytargets)
 
             update_pos = tf.assign_add(self.cur_learned_projsigs[i]['pos'], tf.reduce_mean(ytargets, axis=(0,1,2)))
             update_neg = tf.assign_add(self.cur_learned_projsigs[i]['neg'], tf.reduce_mean(1.-ytargets, axis=(0,1,2)))
@@ -215,19 +212,14 @@ class BalancedLoss(object):
             with tf.control_dependencies([update_pos, update_neg]):
                 # feed through eval_placeholders
                 cur_logits = get_logits(cur_recon, self.eval_placeholders[i])
-
+                cur_labels = tf.nn.sigmoid(cur_logits)
                 if FLAGS.round_gen: 
-                    cur_labels = tf.round(tf.nn.sigmoid(cur_logits))
-                else:
-                    cur_labels = tf.nn.sigmoid(cur_logits)
-
+                    cur_labels = tf.round(cur_labels)
 
                 ylogits = get_logits(cur_target, self.eval_placeholders[i])
-
+                ytargets = tf.nn.sigmoid(ylogits)
                 if FLAGS.round_real: 
-                    ytargets = tf.round(tf.nn.sigmoid(ylogits))
-                else:
-                    ytargets = tf.nn.sigmoid(ylogits)
+                    ytargets = tf.round(ytargets)
 
                 for ps in xrange(self.num_projsigs):
                     cur_loss = tf.nn.weighted_cross_entropy_with_logits(
@@ -320,20 +312,18 @@ def train(train_dir):
                 cur_lr = cur_lr/10.
                 
             balanced_loss.next_epoch(sess)
+            cur_feed_dict = balanced_loss.cur_feed_dict()
+            cur_feed_dict[model.lr] = cur_lr
+            cur_feed_dict[model.is_training] = True
+            cur_feed_dict[model.stocha] = np.array([stocha0])
+            cur_feed_dict[model.beta] = np.array([beta0])
 
             for step in xrange(num_steps):
-                cur_feed_dict = balanced_loss.cur_feed_dict()
-                cur_feed_dict[model.lr] = cur_lr
-                cur_feed_dict[model.is_training] = True
-                cur_feed_dict[model.stocha] = np.array([stocha0])
-                cur_feed_dict[model.beta] = np.array([beta0])
                 cur_feed_dict[model.codes_noise] = np.random.randn(batch_size, 1, 1, code_dim).astype('float32')
 
-                _ = sess.run(model_train_op, feed_dict=cur_feed_dict)
+                _, model_loss_val = sess.run([model_train_op, model.loss], feed_dict=cur_feed_dict)
 
-                model_loss_val = sess.run(model.loss, feed_dict=cur_feed_dict)
-
-                if step%500==0 or (step + 1) == num_steps:
+                if step%100==0 or (step + 1) == num_steps:
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')
                     print (format_str % (datetime.now(), epoch, num_epochs-1, step, num_steps-1, model_loss_val))
 
@@ -343,7 +333,7 @@ def train(train_dir):
                     summary_step += 1
 
                 # Save the model checkpoint periodically.
-                if (epoch%3==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
+                if (epoch%5==0 or (epoch+1)==num_epochs) and (step + 1) == num_steps:
                     checkpoint_path = os.path.join(train_dir, 'model.ckpt')
                     saver.save(sess, checkpoint_path, global_step=(epoch))
 

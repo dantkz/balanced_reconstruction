@@ -138,6 +138,8 @@ def test():
         sess.run(tf.global_variables_initializer())
         images = sess.run(train_images)
         print(images.shape)
+        print(np.amin(images))
+        print(np.amax(images))
 
         coord.request_stop()
         coord.join(threads)

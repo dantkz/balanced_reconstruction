@@ -159,35 +159,38 @@ class BalancedLoss(object):
 
             with tf.variable_scope('BalancedLoss') as scope:
                 self.cur_learned_projsigs[-1]['pos'] = tf.get_variable('pos_'+str(cur_image_size), dtype=tf.float32, shape=[1, 1, 1, self.num_projsigs], trainable=False, initializer=tf.constant_initializer(1.0))
-                self.cur_learned_projsigs[-1]['neg'] = tf.get_variable('neg_'+str(cur_image_size), dtype=tf.float32, shape=[1, 1, 1, self.num_projsigs], trainable=False, initializer=tf.constant_initializer(1.0))
+                self.cur_learned_projsigs[-1]['neg'] = tf.get_variable('neg_'+str(cur_image_size), dtype=tf.float32, shape=[1, 1, 1, self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
 
         # end __init__
 
 
     def next_epoch(self, sess):
         # push learned values from cur_learned_projsigs to cur_eval_projsigs
-        for i, _ in enumerate(self.image_scales):
-            #self.cur_eval_projsigs[i] = {} # TODO
-            self.cur_eval_projsigs[i]['kernel'] = self.cur_learned_projsigs[i]['kernel']
-            self.cur_eval_projsigs[i]['bias'] = self.cur_learned_projsigs[i]['bias']
-            pos = self.cur_learned_projsigs[i]['pos'].eval(session=sess)
-            neg = self.cur_learned_projsigs[i]['neg'].eval(session=sess)
-            self.cur_eval_projsigs[i]['pos_weight'] =  (0.1 + neg) / (0.1 + pos)
+        for scale_idx, _ in enumerate(self.image_scales):
+            #self.cur_eval_projsigs[scale_idx] = {} # TODO
+            self.cur_eval_projsigs[scale_idx]['kernel'] = self.cur_learned_projsigs[scale_idx]['kernel']
+            self.cur_eval_projsigs[scale_idx]['bias'] = self.cur_learned_projsigs[scale_idx]['bias']
+            pos = self.cur_learned_projsigs[scale_idx]['pos'].eval(session=sess)
+            neg = self.cur_learned_projsigs[scale_idx]['neg'].eval(session=sess)
+            pnsum = pos + neg
+            pos /= 0.001+pnsum
+            neg /= 0.001+pnsum
+            self.cur_eval_projsigs[scale_idx]['pos_weight'] =  (0.001 + neg) / (0.001 + pos)
 
         # get new values for cur_learned_projsigs
-        for i, _ in enumerate(self.image_scales):
-            self.cur_learned_projsigs[i]['kernel'] = (np.random.randn(self.ksize, self.ksize, self.color_chn, self.num_projsigs)).astype(np.float32)
-            self.cur_learned_projsigs[i]['bias'] = (np.random.randn(1, 1, 1, self.num_projsigs)).astype(np.float32)
-            tf.assign(self.cur_learned_projsigs[i]['pos'], np.zeros([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
-            tf.assign(self.cur_learned_projsigs[i]['neg'], np.zeros([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
+        for scale_idx, _ in enumerate(self.image_scales):
+            self.cur_learned_projsigs[scale_idx]['kernel'] = (np.random.randn(self.ksize, self.ksize, self.color_chn, self.num_projsigs)).astype(np.float32)
+            self.cur_learned_projsigs[scale_idx]['bias'] = (np.random.randn(1, 1, 1, self.num_projsigs)).astype(np.float32)
+            tf.assign(self.cur_learned_projsigs[scale_idx]['pos'], np.zeros([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
+            tf.assign(self.cur_learned_projsigs[scale_idx]['neg'], np.zeros([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
 
 
     def cur_feed_dict(self):
         feed_dict = {}
-        for i, _ in enumerate(self.image_scales):
-            feed_dict[self.eval_placeholders[i]['kernel']] = self.cur_eval_projsigs[i]['kernel']
-            feed_dict[self.eval_placeholders[i]['bias']] = self.cur_eval_projsigs[i]['bias']
-            feed_dict[self.eval_placeholders[i]['pos_weight']] = self.cur_eval_projsigs[i]['pos_weight']
+        for scale_idx, _ in enumerate(self.image_scales):
+            feed_dict[self.eval_placeholders[scale_idx]['kernel']] = self.cur_eval_projsigs[scale_idx]['kernel']
+            feed_dict[self.eval_placeholders[scale_idx]['bias']] = self.cur_eval_projsigs[scale_idx]['bias']
+            feed_dict[self.eval_placeholders[scale_idx]['pos_weight']] = self.cur_eval_projsigs[scale_idx]['pos_weight']
         return feed_dict
 
 
@@ -202,14 +205,14 @@ class BalancedLoss(object):
             return cur_logits
 
         def weighted_cross_entropy_with_logits(targets, logits, pos_weight):
-            log_weight = 1 + (pos_weight - 1) * targets
-            return math_ops.add(
-                            (1 - targets) * logits,
-                            log_weight * (
-                                    math_ops.log1p(math_ops.exp(-math_ops.abs(logits))) +
-                                    tf.nn.relu(-logits)
-                                    ),
-                            name='wcewl_loss')
+            z = targets
+            x = logits
+            q = pos_weight
+            qz = q*z
+            l = 1. - q - z + qz
+            val = l * x + (qz + l) * (math_ops.log1p(math_ops.exp(-math_ops.abs(x))) + tf.nn.relu(-x))
+            return val
+
 
         # feed through cur_learned_projsigs
         for scale_idx, cur_image_size in enumerate(self.image_scales):
@@ -217,19 +220,20 @@ class BalancedLoss(object):
             cur_recon= slim.avg_pool2d(recon, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
 
             ylogits = get_logits(cur_target, self.cur_learned_projsigs[scale_idx])
-            ytargets = tf.sigmoid(ylogits)
+            ytargets = tf.nn.sigmoid(ylogits)
             ytargets = tf.round(ytargets)
 
             update_pos = tf.assign_add(self.cur_learned_projsigs[scale_idx]['pos'], tf.reduce_mean(ytargets, axis=(0,1,2), keep_dims=True))
+
             update_neg = tf.assign_add(self.cur_learned_projsigs[scale_idx]['neg'], tf.reduce_mean(1.-ytargets, axis=(0,1,2), keep_dims=True))
 
             with tf.control_dependencies([update_pos, update_neg]):
                 # feed through eval_placeholders
                 cur_logits = get_logits(cur_recon, self.eval_placeholders[scale_idx])
-                cur_labels = tf.sigmoid(cur_logits)
+                cur_labels = tf.nn.sigmoid(cur_logits)
 
                 ylogits = get_logits(cur_target, self.eval_placeholders[scale_idx])
-                ytargets = tf.sigmoid(ylogits)
+                ytargets = tf.nn.sigmoid(ylogits)
                 ytargets = tf.round(ytargets)
 
                 if FLAGS.loss_type==0:
@@ -249,8 +253,6 @@ class BalancedLoss(object):
                     exit()
 
                 cur_loss = tf.reduce_mean(tf.reduce_sum(cur_loss, axis=(1,2,3)), name='wcel_'+str(scale_idx))
-                print(cur_loss)
-
                 losses.append(cur_loss)
 
         return losses
@@ -288,7 +290,7 @@ def train(train_dir):
         num_steps = math.ceil(dataset.train.num_img/batch_size)
         num_epochs = 100
 
-        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16], ksize=1)
+        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16], ksize=3)
 
         model = VAE(batch_size, code_dim, img_encoder_params, img_decoder_params, train_images, balanced_loss.eval_loss)
         model.train_graph()

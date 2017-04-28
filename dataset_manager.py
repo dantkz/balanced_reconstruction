@@ -33,12 +33,12 @@ class FolderDataset(object):
 
         print('reading', path)
         filelist = sorted(glob.glob(os.path.join(path, '*.' + file_extension)))
+        print(len(filelist))
         
         def get_dims(fname):
             image = np.array(scipy.ndimage.imread(fname))
             return image.shape[0], image.shape[1], image.shape[2]
 
-        print(len(filelist))
         self.height, self.width, self.color_chn = get_dims(filelist[0])
 
         self._index_in_epoch = 0
@@ -49,6 +49,7 @@ class FolderDataset(object):
             self.num_img = num_img
             assert num_img <= num_examples - self.ind_offset
 
+        filelist = filelist[self.ind_offset:(self.ind_offset+self.num_img)]
         self.tffilelist = tf.convert_to_tensor(filelist)
 
         print('File index offset: ' + str(self.ind_offset))
@@ -71,8 +72,19 @@ class FolderDataset(object):
         image = self.get_image(filenames)
         min_after_dequeue = 2048
         capacity = min_after_dequeue + 4 * batch_size
-        images = tf.train.shuffle_batch([image],
-            batch_size=batch_size, min_after_dequeue=min_after_dequeue, capacity=capacity, num_threads=4)
+
+        if doperm:
+            images = tf.train.shuffle_batch([image],
+                batch_size=batch_size, 
+                min_after_dequeue=min_after_dequeue, 
+                capacity=capacity, 
+                num_threads=4)
+        else:
+            images = tf.train.batch([image],
+                batch_size=batch_size, 
+                capacity=capacity, 
+                num_threads=1)
+
         return images
 
 
@@ -96,14 +108,14 @@ def get_folder(path, num_img=None, ind_offset=None):
         ind_offset = 0
 
     train = FolderDataset(path, num_img, ind_offset)
-    #test = FolderDataset(path, None, num_img)
+    test = FolderDataset(path, None, num_img)
 
     class Datasets(object):
         pass
 
     result = Datasets()
     result.train = train
-    #result.test = test
+    result.test = test
     return result
 
 

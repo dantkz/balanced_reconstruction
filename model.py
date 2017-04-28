@@ -10,6 +10,7 @@ import scipy.misc
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow.contrib.slim as slim
+from tensorflow.python.ops import math_ops
 
 import util
 import ops
@@ -17,8 +18,10 @@ import dataset_manager
 
 tf_flags = tf.app.flags
 FLAGS = tf_flags.FLAGS
-tf_flags.DEFINE_boolean('round_gen', False, 'round generator output')
-tf_flags.DEFINE_boolean('round_real', True, 'round real data')
+tf_flags.DEFINE_boolean('dotrain', True, 'do train or test?')
+tf_flags.DEFINE_integer('loss_type', -1, '0: balanced cross-entropy with sigmoids loss, 1: l1 of projections of reconstructions loss, 2: l1 reconstructions loss, 3: l2 of reconstructions loss')
+tf_flags.DEFINE_string('train_dir', '', 'training_directory')
+#tf_flags.DEFINE_boolean('round_real', True, 'round real data')
 #tf_flags.DEFINE_integer('dim', -1, '')
 #tf_flags.DEFINE_float('disc_lr_coeff', 1.0, 'coefficient for discriminator learning rate')
 
@@ -215,8 +218,7 @@ class BalancedLoss(object):
 
             ylogits = get_logits(cur_target, self.cur_learned_projsigs[scale_idx])
             ytargets = tf.sigmoid(ylogits)
-            if FLAGS.round_real: 
-                ytargets = tf.round(ytargets)
+            ytargets = tf.round(ytargets)
 
             update_pos = tf.assign_add(self.cur_learned_projsigs[scale_idx]['pos'], tf.reduce_mean(ytargets, axis=(0,1,2), keep_dims=True))
             update_neg = tf.assign_add(self.cur_learned_projsigs[scale_idx]['neg'], tf.reduce_mean(1.-ytargets, axis=(0,1,2), keep_dims=True))
@@ -225,27 +227,27 @@ class BalancedLoss(object):
                 # feed through eval_placeholders
                 cur_logits = get_logits(cur_recon, self.eval_placeholders[scale_idx])
                 cur_labels = tf.sigmoid(cur_logits)
-                if FLAGS.round_gen: 
-                    cur_labels = tf.round(cur_labels)
 
                 ylogits = get_logits(cur_target, self.eval_placeholders[scale_idx])
                 ytargets = tf.sigmoid(ylogits)
-                if FLAGS.round_real: 
-                    ytargets = tf.round(ytargets)
+                ytargets = tf.round(ytargets)
 
-                #cur_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-                #        labels=ytargets, 
-                #        logits=cur_logits
-                #)
+                if FLAGS.loss_type==0:
+                    cur_loss = weighted_cross_entropy_with_logits(
+                            targets=ytargets, 
+                            logits=cur_logits, 
+                            pos_weight=self.eval_placeholders[scale_idx]['pos_weight']
+                    )
+                elif FLAGS.loss_type==1:
+                    cur_loss = tf.abs(ylogits-cur_logits)
+                elif FLAGS.loss_type==2:
+                    cur_loss = tf.abs(cur_recon-cur_target)
+                elif FLAGS.loss_type==3:
+                    cur_loss = tf.square(cur_recon-cur_target)
+                else:
+                    print('undefined loss type')
+                    exit()
 
-                #cur_loss = weighted_cross_entropy_with_logits(
-                #        targets=ytargets, 
-                #        logits=cur_logits, 
-                #        pos_weight=self.eval_placeholders[scale_idx]['pos_weight']
-                #)
-
-                #cur_loss = tf.abs(ylogits-cur_logits)
-                cur_loss = tf.abs(cur_recon-cur_target)
                 cur_loss = tf.reduce_mean(tf.reduce_sum(cur_loss, axis=(1,2,3)), name='wcel_'+str(scale_idx))
                 print(cur_loss)
 
@@ -286,7 +288,7 @@ def train(train_dir):
         num_steps = math.ceil(dataset.train.num_img/batch_size)
         num_epochs = 100
 
-        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64], ksize=1)
+        balanced_loss = BalancedLoss(batch_size, image_size, color_chn, train_images, num_steps, [64, 32, 16], ksize=1)
 
         model = VAE(batch_size, code_dim, img_encoder_params, img_decoder_params, train_images, balanced_loss.eval_loss)
         model.train_graph()
@@ -333,7 +335,7 @@ def train(train_dir):
 
                 _, model_loss_val = sess.run([model_train_op, model.loss], feed_dict=cur_feed_dict)
 
-                if step%100==0 or (step + 1) == num_steps:
+                if step%500==0 or (step + 1) == num_steps:
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')
                     print (format_str % (datetime.now(), epoch, num_epochs-1, step, num_steps-1, model_loss_val))
 
@@ -358,15 +360,114 @@ def train(train_dir):
         coord.join(threads)
 
 
+def test(test_dir, train_dir):
+    with tf.Graph().as_default():
+        batch_size = 16
+        code_dim = 128
+
+        img_encoder_params = {
+                        'scopename' : 'img_enc', 
+                        'channels' : [32,32,64,128,256,512], 
+                        'strides' :  [1, 2, 2, 2,  2,  4], # 64, 32, 16, 8, 4, 1
+                        'ksizes' :   [3, 3, 3, 3,  3,  4],
+                        'batch_norm' : True
+                    }
+
+        img_decoder_params = {
+                        'scopename' : 'img_dec', 
+                        'channels' :  [512, 256, 128, 64, 32, 32],
+                        'ksizes' :    [4,   3,   3,   3,  3,  1],
+                        'outshapes' : [4,   8,   16,  32, 64, 64],
+                        'colorout' :  [0,   0,   0,   0,  0,  1 ],
+                        'COLOR_CHN' : 3,
+                        'outlin' : False,
+                        'batch_norm' : True
+                    }
+
+        dataset = dataset_manager.get_dataset('celeba64')
+        image_size, color_chn = dataset.train.get_dims()
+        test_images = dataset.test.next_batch(batch_size, doperm=False)
+
+        num_steps = 4#math.ceil(dataset.test.num_img/batch_size)
+
+        model = VAE(batch_size, code_dim, img_encoder_params, img_decoder_params, test_images, None)
+        model.train_graph()
+        model.sample_graph(reuse=True)
+
+        saver = tf.train.Saver(tf.global_variables())
+
+        # Start running operations on the Graph.
+        sess = tf.Session()
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
+        # TODO Initialize variables?
+
+        # Load variables 
+        ckpt = tf.train.get_checkpoint_state(train_dir)
+        print('loading from', train_dir)
+
+        if ckpt and ckpt.model_checkpoint_path:
+            vars_to_restore = tf.global_variables()
+            res_saver = tf.train.Saver(vars_to_restore)
+            
+            # Restores from checkpoint
+            model_checkpoint_path = os.path.abspath(ckpt.model_checkpoint_path)
+            print(model_checkpoint_path)
+            res_saver.restore(sess, model_checkpoint_path)
+        else:
+            print('Error: no checkpoint file found')
+            exit()
+
+        stocha0 = 1.0
+        beta0 = 1.0
+            
+        cur_feed_dict={}
+        cur_feed_dict[model.is_training] = False
+        cur_feed_dict[model.stocha] = np.array([stocha0])
+        cur_feed_dict[model.beta] = np.array([beta0])
+
+        for step in xrange(num_steps):
+            cur_feed_dict[model.codes_noise] = np.random.randn(batch_size, 1, 1, code_dim).astype('float32')
+
+            recs_mu, cur_images = sess.run([model.recs_mu, model.images], feed_dict=cur_feed_dict)
+            for i in xrange(batch_size):
+                tmp = np.concatenate([cur_images[i,:,:,:], recs_mu[i,:,:,:]], axis=0)
+                util.save_img(tmp, os.path.join(test_dir, 'img_%d.png' % (step*batch_size + i)))
+
+            if step%100==0 or (step + 1) == num_steps:
+                format_str = ('%s: step %d of %d')
+                print (format_str % (datetime.now(), step, num_steps-1))
+
+
+
+        coord.request_stop()
+        coord.join(threads)
+
 
 def main(argv=None):  # pylint: disable=unused-argument
-    train_dir = 'logsl1vanilla/'
+    if FLAGS.dotrain==True:
+        train_dir = FLAGS.train_dir
+        if len(train_dir)==0:
+            train_dir = 'logs_loss' + str(FLAGS.loss_type) + '/'
 
-    if tf.gfile.Exists(train_dir):
-        tf.gfile.DeleteRecursively(train_dir)
+        print('Training model at', train_dir)
 
-    os.makedirs(train_dir)
-    train(train_dir)
+        if tf.gfile.Exists(train_dir):
+            tf.gfile.DeleteRecursively(train_dir)
+        os.makedirs(train_dir)
+        train(train_dir)
+
+    elif FLAGS.dotrain==False:
+        train_dir = FLAGS.train_dir
+        test_dir = 'test_' + train_dir
+
+        if tf.gfile.Exists(test_dir):
+            tf.gfile.DeleteRecursively(test_dir)
+        os.makedirs(test_dir)
+
+        print('Testing model at', train_dir)
+        test(test_dir, train_dir)
 
 
 if __name__ == '__main__':

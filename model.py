@@ -174,7 +174,7 @@ class BalancedLoss(object):
             pnsum = pos + neg
             pos /= 0.00001+pnsum
             neg /= 0.00001+pnsum
-            self.cur_eval_projsigs[scale_idx]['pos_weight'] = pos
+            self.cur_eval_projsigs[scale_idx]['pos_weight'] = neg
 
         # get new values for cur_learned_projsigs
         for scale_idx, _ in enumerate(self.image_scales):
@@ -220,7 +220,7 @@ class BalancedLoss(object):
 
             ylogits = get_logits(cur_target, self.cur_learned_projsigs[scale_idx])
             ytargets = tf.sigmoid(ylogits)
-            #ytargets = tf.round(ytargets)
+            ytargets = tf.round(ytargets)
             ytargets_bool = tf.greater(ytargets, tf.constant(0.5, dtype=tf.float32))
             ytargets_bool = tf.cast(ytargets_bool, tf.float32)
 
@@ -235,7 +235,7 @@ class BalancedLoss(object):
 
                 ylogits = get_logits(cur_target, self.eval_placeholders[scale_idx])
                 ytargets = tf.sigmoid(ylogits)
-                ytargets = tf.round(ytargets)
+                #ytargets = tf.round(ytargets)
 
                 if FLAGS.loss_type==0:
                     cur_loss = weighted_cross_entropy_with_logits(

@@ -235,7 +235,7 @@ class BalancedLoss(object):
 
                 ylogits = get_logits(cur_target, self.eval_placeholders[scale_idx])
                 ytargets = tf.sigmoid(ylogits)
-                ytargets = tf.round(ytargets)
+                #ytargets = tf.round(ytargets)
 
                 if FLAGS.loss_type==0:
                     cur_loss = weighted_cross_entropy_with_logits(

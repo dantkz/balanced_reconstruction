@@ -220,7 +220,7 @@ class BalancedLoss(object):
 
             ylogits = get_logits(cur_target, self.cur_learned_projsigs[scale_idx])
             ytargets = tf.sigmoid(ylogits)
-            #ytargets = tf.round(ytargets)
+            ytargets = tf.round(ytargets)
             ytargets_bool = tf.greater(ytargets, tf.constant(0.5, dtype=tf.float32))
             ytargets_bool = tf.cast(ytargets_bool, tf.float32)
 

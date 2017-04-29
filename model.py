@@ -174,7 +174,7 @@ class BalancedLoss(object):
             pnsum = pos + neg
             pos /= 0.00001+pnsum
             neg /= 0.00001+pnsum
-            self.cur_eval_projsigs[scale_idx]['pos_weight'] = neg
+            self.cur_eval_projsigs[scale_idx]['pos_weight'] = pos
 
         # get new values for cur_learned_projsigs
         for scale_idx, _ in enumerate(self.image_scales):

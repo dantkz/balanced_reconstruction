@@ -107,15 +107,15 @@ def get_folder(path, num_img=None, ind_offset=None):
     if ind_offset is None:
         ind_offset = 0
 
-    train = FolderDataset(path, num_img, ind_offset)
-    test = FolderDataset(path, None, num_img)
-
     class Datasets(object):
         pass
-
     result = Datasets()
+
+    train = FolderDataset(path, num_img, ind_offset)
     result.train = train
-    result.test = test
+
+    #test = FolderDataset(path, None, num_img)
+    #result.test = test
     return result
 
 

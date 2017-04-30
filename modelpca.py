@@ -191,7 +191,7 @@ class BalancedLoss(object):
             pnsum = pos + neg
             pos /= 0.00001+pnsum
             neg /= 0.00001+pnsum
-            self.cur_eval_projsigs[scale_idx]['pos_weight'] = pos # TODO
+            self.cur_eval_projsigs[scale_idx]['pos_weight'] = neg # TODO
 
         def get_patches():
             patches = []
@@ -222,13 +222,11 @@ class BalancedLoss(object):
             coeffs = np.dot(cur_patches, kernels.transpose())
 
             bias_min = np.min(coeffs, axis=1)[0:self.num_projsigs]
-            bias_max = np.max(coeffs,axis=1)[0:self.num_projsigs]
-            print(bias_min)
-            print(bias_max)
+            bias_max = np.max(coeffs, axis=1)[0:self.num_projsigs]
             bias_min = np.reshape(bias_min, [1, 1, 1, self.num_projsigs, 1])
             bias_max = np.reshape(bias_max, [1, 1, 1, self.num_projsigs, 1])
-            print(bias_max.shape)
             biases = bias_min + (bias_max-bias_min)*np.random.rand(1, 1, 1, self.num_projsigs, self.num_biases)
+            biases = -biases
 
             kernels = kernels.transpose()[:,0:self.num_projsigs]
             #kernels = kernels.transpose()[0:self.num_projsigs,:]
@@ -265,7 +263,7 @@ class BalancedLoss(object):
             assert len(convshape)==4, 'inp must be 4 dimensional tensor'
             convout = tf.tile(tf.expand_dims(convout, axis=4), [1, 1, 1, 1, self.num_biases])
             cur_logits = convout +  cur_projsig['bias']
-            return cur_logits
+            return 100.*cur_logits
 
         def weighted_cross_entropy_with_logits(targets, logits, pos_weight):
             z = targets
@@ -392,7 +390,6 @@ def train(train_dir):
             cur_feed_dict[model.beta] = np.array([beta0])
             cur_feed_dict[model.codes_noise] = np.random.randn(batch_size, 1, 1, code_dim).astype('float32')
             balanced_loss.next_epoch(sess, cur_feed_dict, model.codes_noise)
-
             cur_feed_dict.update(balanced_loss.cur_feed_dict())
 
             for step in xrange(num_steps):
@@ -400,7 +397,7 @@ def train(train_dir):
 
                 _, model_loss_val = sess.run([model_train_op, model.loss], feed_dict=cur_feed_dict)
 
-                if step%100==0 or (step + 1) == num_steps:
+                if step%500==0 or (step + 1) == num_steps:
                     format_str = ('%s: epoch %d of %d, step %d of %d, model_loss = %.5f')
                     print (format_str % (datetime.now(), epoch, num_epochs-1, step, num_steps-1, model_loss_val))
 

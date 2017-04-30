@@ -168,15 +168,16 @@ class BalancedLoss(object):
             tf_patches = tf.nn.conv2d(inp, self.tf_identity_kernel, strides=(1,1,1,1), padding='SAME')
             return tf_patches
 
-        self.tf_patches = []
+        self.tf_patches_inp = []
+        self.tf_patches_rec = []
 
         for scale_idx, cur_image_size in enumerate(self.image_scales):
             # extract patches
             tf_cur_recs = slim.avg_pool2d(tf_recs_mu, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
             tf_cur_inputs = slim.avg_pool2d(tf_images, self.image_size//cur_image_size, stride=self.image_size//cur_image_size, padding='SAME')
             #inp = tf.concat([tf_cur_recs, tf_cur_inputs], axis=0)
-            inp = tf_cur_inputs
-            self.tf_patches.append(get_patches(inp))
+            self.tf_patches_inp.append(get_patches(tf_cur_inputs))
+            self.tf_patches_rec.append(get_patches(tf_cur_recs))
 
     def next_epoch(self, sess, cur_feed_dict, codes_noise):
         assert self.num_projsigs <= self.ksize*self.ksize*self.color_chn, 'too many projections specified'
@@ -194,32 +195,38 @@ class BalancedLoss(object):
             self.cur_eval_projsigs[scale_idx]['pos_weight'] = neg # TODO
 
         def get_patches():
-            patches = []
+            patches_inp = []
+            patches_rec = []
             for scale_idx, _ in enumerate(self.image_scales):
-                patches.append([])
+                patches_inp.append([])
+                patches_rec.append([])
 
             for i in xrange(4): # TODO
                 cur_feed_dict[codes_noise] = np.random.randn(*list(cur_feed_dict[codes_noise].shape)).astype('float32')
-                cur_patches = sess.run(self.tf_patches, feed_dict=cur_feed_dict)
+                cur_patches_inp, cur_patches_rec = sess.run([self.tf_patches_inp, self.tf_patches_rec], feed_dict=cur_feed_dict)
                 for scale_idx, _ in enumerate(self.image_scales):
-                    cur_patches[scale_idx] = np.reshape(cur_patches[scale_idx], [-1, self.ksize*self.ksize*self.color_chn])
-                    patches[scale_idx].append(cur_patches[scale_idx])
-            return patches
+                    cur_patches_inp[scale_idx] = np.reshape(cur_patches_inp[scale_idx], [-1, self.ksize*self.ksize*self.color_chn])
+                    cur_patches_rec[scale_idx] = np.reshape(cur_patches_rec[scale_idx], [-1, self.ksize*self.ksize*self.color_chn])
+                    patches_inp[scale_idx].append(cur_patches_inp[scale_idx])
+                    patches_rec[scale_idx].append(cur_patches_rec[scale_idx])
 
-        patches = get_patches()
+            return patches_inp, patches_rec
+
+        patches_inp, patches_rec = get_patches()
 
         # get new values for cur_learned_projsigs
         for scale_idx, cur_image_size in enumerate(self.image_scales):
-            # extract patches
-            cur_patches = np.vstack(patches[scale_idx])
+            cur_patches_inp = np.vstack(patches_inp[scale_idx])
+            cur_patches_rec = np.vstack(patches_rec[scale_idx])
 
-            # pca over cur_patches
-            mean_patch = np.mean(cur_patches, axis=1, keepdims=True)
-            centered_patches = cur_patches-mean_patch
+            # pca over patches
+            #mean_patch = np.mean(cur_patches_inp, axis=1, keepdims=True)
+            #centered_patches = cur_patches_inp - mean_patch
+            centered_patches = cur_patches_inp - cur_patches_rec
             coeffs, kernel_scale, kernels = np.linalg.svd(centered_patches, full_matrices=0)
 
             #coeffs = np.dot(coeffs, np.diag(kernel_scale))
-            coeffs = np.dot(cur_patches, kernels.transpose())
+            coeffs = np.dot(cur_patches_inp, kernels.transpose())
 
             bias_min = np.min(coeffs, axis=1)[0:self.num_projsigs]
             bias_max = np.max(coeffs, axis=1)[0:self.num_projsigs]
@@ -424,7 +431,7 @@ def train(train_dir):
 
 
 def main(argv=None):  # pylint: disable=unused-argument
-    train_dir = 'logspca/'
+    train_dir = 'logspcadiff/'
 
     if tf.gfile.Exists(train_dir):
         tf.gfile.DeleteRecursively(train_dir)

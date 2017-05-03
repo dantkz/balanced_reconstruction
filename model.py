@@ -205,9 +205,9 @@ class BalancedLoss(object):
 
         def jensen_shannon_divergence(target_labels, target_logits, cur_labels, cur_logits):
             prob_ave = 0.5*(target_labels+cur_labels)
-            val1 = -0.5*(target_labels*tf.log(prob_ave))
+            val1 = -0.5*(target_labels*tf.log(0.001 + 0.999*prob_ave))
             val2 = 0.5*(cur_labels*cur_logits)
-            val3 = -0.5*(cur_labels*tf.log(prob_ave))
+            val3 = -0.5*(cur_labels*tf.log(0.001 + 0.999*prob_ave))
             return val1 + val2 + val3
 
         def weighted_cross_entropy_with_logits(targets, logits, pos_weight):

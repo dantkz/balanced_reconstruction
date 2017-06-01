@@ -31,7 +31,6 @@ class VAE(object):
 
         # Constants
         self.codes_prior_sigma      = 1.0
-        self.hard_gumbel            = False
   
         # Inputs
         self.images = images
@@ -278,7 +277,7 @@ def train(train_dir):
                         'channels' :  [512, 256, 128, 64, 32, 32],
                         'ksizes' :    [4,   3,   3,   3,  3,  1],
                         'outshapes' : [4,   8,   16,  32, 64, 64],
-                        'colorout' :  [0,   0,   0,   0,  0,  1 ],
+                        'colorout' :  [0,   0,   0,   0,  0,  1],
                         'COLOR_CHN' : 3,
                         'outlin' : False,
                         'batch_norm' : True

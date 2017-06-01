@@ -202,6 +202,13 @@ class BalancedLoss(object):
             cur_logits = convout + cur_projsig['bias']
             return 100.*cur_logits
 
+        def jensen_shannon_divergence(target_labels, target_logits, cur_labels, cur_logits):
+            prob_ave = 0.5*(target_labels+cur_labels)
+            val1 = -0.5*(target_labels*tf.log(0.001 + 0.999*prob_ave))
+            val2 = 0.5*(cur_labels*cur_logits)
+            val3 = -0.5*(cur_labels*tf.log(0.001 + 0.999*prob_ave))
+            return val1 + val2 + val3
+
         def weighted_cross_entropy_with_logits(targets, logits, pos_weight):
             z = targets
             x = logits
@@ -219,7 +226,7 @@ class BalancedLoss(object):
 
             ylogits = get_logits(cur_target, self.cur_learned_projsigs[scale_idx])
             ytargets = tf.sigmoid(ylogits)
-            ytargets = tf.round(ytargets)
+            #ytargets = tf.round(ytargets)
             ytargets_bool = tf.greater(ytargets, tf.constant(0.5, dtype=tf.float32))
             ytargets_bool = tf.cast(ytargets_bool, tf.float32)
 
@@ -234,9 +241,9 @@ class BalancedLoss(object):
 
                 ylogits = get_logits(cur_target, self.eval_placeholders[scale_idx])
                 ytargets = tf.sigmoid(ylogits)
-                ytargets = tf.round(ytargets)
 
                 if FLAGS.loss_type==0:
+                    ytargets = tf.round(ytargets)
                     cur_loss = weighted_cross_entropy_with_logits(
                             targets=ytargets, 
                             logits=cur_logits, 
@@ -248,6 +255,8 @@ class BalancedLoss(object):
                     cur_loss = tf.abs(cur_recon-cur_target)
                 elif FLAGS.loss_type==3:
                     cur_loss = tf.square(cur_recon-cur_target)
+                elif FLAGS.loss_type==4:
+                    cur_loss = jensen_shannon_divergence(ytargets, ylogits, cur_labels, cur_logits)
                 else:
                     print('undefined loss type')
                     exit()

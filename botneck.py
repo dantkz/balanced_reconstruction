@@ -127,21 +127,27 @@ class RandDiv(object):
         self.projsigs['kernel'] = tf.placeholder(tf.float32, [1, 1, self.code_dim, self.num_projsigs])
         self.projsigs['bias'] = tf.placeholder(tf.float32, [1, 1, 1, self.num_projsigs])
 
-        with tf.variable_scope('RandDiv') as scope:
-            self.projsigs['prior_pos'] = tf.get_variable('prior_pos', dtype=tf.float32, shape=[1, 1, 1, self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.0))
-            self.projsigs['codes_pos'] = tf.get_variable('codes_pos', dtype=tf.float32, shape=[1, 1, 1, self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.0))
+        self.ema = tf.train.ExponentialMovingAverage(decay=0.95)
 
+        with tf.variable_scope('RandDiv') as scope:
+            self.projsigs['prior_pos'] = tf.get_variable('prior_pos', dtype=tf.float32, shape=[1, 1, 1, self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
+            self.projsigs['codes_pos'] = tf.get_variable('codes_pos', dtype=tf.float32, shape=[1, 1, 1, self.num_projsigs], trainable=False, initializer=tf.constant_initializer(0.5))
+
+        tf.summary.scalar('prior_pos', self.projsigs['prior_pos'][0,0,0,0])
+        tf.summary.scalar('codes_pos', self.projsigs['codes_pos'][0,0,0,0])
         # end __init__
 
 
     def next_epoch(self, sess):
         # get new values for projsigs
-        self.projsigs_vals['kernel'] = (np.random.randn(1, 1, self.code_dim, self.num_projsigs)).astype(np.float32)
-        self.projsigs_vals['bias'] = (np.random.randn(1, 1, 1, self.num_projsigs)).astype(np.float32)
-        tf.assign(self.projsigs['prior_pos'], np.zeros([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
-        tf.assign(self.projsigs['codes_pos'], np.zeros([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
-        
-        pass
+        kernel = (np.random.randn(1, 1, self.code_dim, self.num_projsigs))
+        kernel = kernel/np.sum(np.square(kernel), axis=3, keepdims=True)
+        self.projsigs_vals['kernel'] = kernel.astype(np.float32)
+        bias = (np.random.randn(1, 1, 1, self.num_projsigs))
+        self.projsigs_vals['bias'] = bias.astype(np.float32)
+        tf.assign(self.projsigs['prior_pos'], 0.5*np.ones([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
+        tf.assign(self.projsigs['codes_pos'], 0.5*np.ones([1, 1, 1, self.num_projsigs], dtype=np.float32)).eval(session=sess)
+
 
     def cur_feed_dict(self):
         feed_dict = {}
@@ -157,7 +163,7 @@ class RandDiv(object):
             convshape = convout.get_shape().as_list()
             assert len(convshape)==4, 'inp must be 4 dimensional tensor'
             cur_logits = convout + cur_projsig['bias']
-            return 100.*cur_logits
+            return 1000.*cur_logits
 
 
         def update_stats():
@@ -175,13 +181,11 @@ class RandDiv(object):
             codes_stats = tf.sigmoid(codes_logits)
             codes_stats = tf.reduce_mean(codes_stats, axis=(0), keep_dims=True)
 
-            ema = tf.train.ExponentialMovingAverage(decay=0.95)
-
-            ema_apply_op = ema.apply([samples_bool_pos, codes_stats])
-            prior_pos_op = tf.assign(self.projsigs['prior_pos'], ema.average(samples_bool_pos))
-            codes_pos_op = tf.assign(self.projsigs['codes_pos'], ema.average(codes_stats))
+            ema_apply_op = self.ema.apply([samples_bool_pos, codes_stats])
+            prior_pos_op = tf.assign(self.projsigs['prior_pos'], self.ema.average(samples_bool_pos))
+            codes_pos_op = tf.assign(self.projsigs['codes_pos'], self.ema.average(codes_stats))
             with tf.control_dependencies([ema_apply_op, prior_pos_op]):
-                return tf.identity(self.projsigs['prior_pos']), tf.identity(self.projsigs['codes_pos'])
+                return tf.identity(self.projsigs['prior_pos']), tf.identity(0.5*codes_stats + 0.5*self.projsigs['codes_pos'])
             
         prior_pos, codes_pos = update_stats()
 
